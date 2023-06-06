@@ -29,18 +29,18 @@ async def return_stream(data):
         try:
             if (final):
                 socketio.server.emit(
-                    'disconnect', {'result': response, 'final': final}, request.sid, namespace="/chat")
+                    'disconnect', {'result': response, 'final': final}, request.sid, namespace="/sfbot/chat")
                 disconnect()
             else:
                 socketio.server.emit(
-                    'message', {'result': response, 'final': final}, request.sid, namespace="/chat")
+                    'message', {'result': response, 'final': final}, request.sid, namespace="/sfbot/chat")
         except Exception as e:
             disconnect()
             log.warn("[http]emit:{}", e)
             break
 
 
-@socketio.on('message', namespace='/chat')
+@socketio.on('message', namespace='/sfbot/chat')
 def stream(data):
     if (auth.identify(request) == False):
         client_sid = request.sid
@@ -53,25 +53,25 @@ def stream(data):
         if img_match_prefix:
             reply_text = HttpChannel().handle(data=data)
             socketio.emit(
-                'disconnect', {'result': reply_text}, namespace='/chat')
+                'disconnect', {'result': reply_text}, namespace='/sfbot/chat')
             disconnect()
             return
         asyncio.run(return_stream(data))
 
 
-@socketio.on('connect', namespace='/chat')
+@socketio.on('connect', namespace='/sfbot/chat')
 def connect():
     log.info('connected')
-    socketio.emit('message', {'info': "connected"}, namespace='/chat')
+    socketio.emit('message', {'info': "connected"}, namespace='/sfbot/chat')
 
 
-@socketio.on('disconnect', namespace='/chat')
+@socketio.on('disconnect', namespace='/sfbot/chat')
 def disconnect():
     log.info('disconnect')
-    socketio.server.disconnect(request.sid, namespace="/chat")
+    socketio.server.disconnect(request.sid, namespace="/sfbot/chat")
 
 
-@http_app.route("/chat", methods=['POST'])
+@http_app.route("/sfbot/chat", methods=['POST'])
 def chat():
     if (auth.identify(request) == False):
         return
@@ -84,18 +84,18 @@ def chat():
         return {'result': reply_text}
 
 
-@http_app.route("/", methods=['GET'])
+@http_app.route("/sfbot", methods=['GET'])
 def index():
     if (auth.identify(request) == False):
         return login()
     return render_template('index.html')
 
 
-@http_app.route("/login", methods=['POST', 'GET'])
+@http_app.route("/sfbot/login", methods=['POST', 'GET'])
 def login():
     response = make_response("<html></html>", 301)
     response.headers.add_header('content-type', 'text/plain')
-    response.headers.add_header('location', './')
+    response.headers.add_header('location', '/sfbot')
     if (auth.identify(request) == True):
         return response
     else:
@@ -106,7 +106,7 @@ def login():
                 return response
         else:
             return render_template('login.html')
-    response.headers.set('location', './login?err=登录失败')
+    response.headers.set('location', '/sfbot/login?err=登录失败')
     return response
 
 

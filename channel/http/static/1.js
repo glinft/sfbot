@@ -21,7 +21,7 @@ function ConvState(wrapper, form, params) {
         $(this.wrapper).find('#messages').stop().animate({ scrollTop: $(this.wrapper).find('#messages')[0].scrollHeight }, 600);
     }.bind(this);
 };
-ConvState.prototype.printAnswer = function (uuid, answer = '我是ChatGPT, 一个由OpenAI训练的大型语言模型, 我旨在回答并解决人们的任何问题，并且可以使用多种语言与人交流。输入 #清除记忆 可以开始新的话题探索。输入 画xx 可以为你画一张图片。我无法对事实性与实时性问题提供准确答复，请慎重对待回答。') {
+ConvState.prototype.printAnswer = function (uuid, answer = '我是 亿推视频 客服人员。亿推视频的目标是将现有资料转化为高质量视频，亿推让推广变得更轻松！') {
     setTimeout(function () {
         var messageObj = $(this.wrapper).find(`#${uuid}`);
         answer = marked.parse(answer);
@@ -34,8 +34,8 @@ ConvState.prototype.printAnswer = function (uuid, answer = '我是ChatGPT, 一�
 
 ConvState.prototype.updateAnswer = function (question, uuid) {
     setTimeout(function () {
-        var socket = io('/chat');
-        socket.connect('/chat');
+        var socket = io('/sfbot/chat');
+        socket.connect('/sfbot/chat');
         let timerId;
         var _this = this
         // 设置计时器，如果在规定的时间内没有接收到消息，则手动断开连接
@@ -98,7 +98,7 @@ ConvState.prototype.sendMessage = function (msg) {
         this.updateAnswer(question, uuid)
     else
         $.ajax({
-            url: "./chat",
+            url: "./sfbot/chat",
             type: "POST",
             timeout: 180000,
             data: JSON.stringify(question),
