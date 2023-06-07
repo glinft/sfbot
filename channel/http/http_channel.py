@@ -11,11 +11,14 @@ from config import channel_conf
 from config import channel_conf_val
 from channel.channel import Channel
 from flask_socketio import SocketIO
+from flask_cors import CORS
 from common import log
 from plugins.plugin_manager import *
 
 http_app = Flask(__name__,)
-socketio = SocketIO(http_app, close_timeout=5)
+socketio = SocketIO(http_app, path='/sfbot/socket.io', cors_allowed_origins=['https://api.sflow.io'], close_timeout=5)
+# CORS(app)
+
 # 自动重载模板文件
 http_app.jinja_env.auto_reload = True
 http_app.config['TEMPLATES_AUTO_RELOAD'] = True

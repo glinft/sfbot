@@ -34,7 +34,9 @@ ConvState.prototype.printAnswer = function (uuid, answer = '我是 亿推视频 
 
 ConvState.prototype.updateAnswer = function (question, uuid) {
     setTimeout(function () {
-        var socket = io('/sfbot/chat');
+        var socket = io('/sfbot/chat', {
+            path: '/sfbot/socket.io',
+        });
         socket.connect('/sfbot/chat');
         let timerId;
         var _this = this
