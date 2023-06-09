@@ -5,6 +5,7 @@ import datetime
 import time
 from flask import jsonify, request
 from common import const
+from common.redis import RedisSingleton
 from config import channel_conf
 
 
@@ -16,10 +17,11 @@ class Auth():
         super(Auth, self).__init__()
 
     @staticmethod
-    def encode_auth_token(user_id, login_time):
+    def encode_auth_token(username, password, login_time):
         """
         生成认证Token
-        :param user_id: int
+        :param username: str
+        :param password: str
         :param login_time: datetime
         :return: string
         """
@@ -29,7 +31,8 @@ class Auth():
                 'exp': datetime.datetime.utcnow() + datetime.timedelta(days=0, hours=10),  # 过期时间
                 'iat': datetime.datetime.utcnow(),  # 开始时间
                 'data': {
-                    'id': user_id,
+                    'id': username,
+                    'password': password,
                     'login_time': login_time
                 }
             }
@@ -45,8 +48,8 @@ class Auth():
     def decode_auth_token(auth_token):
         """
         验证Token
-        :param auth_token:
-        :return: integer|string
+        :param auth_token: str
+        :return: json|str
         """
         try:
             # 取消过期时间验证
@@ -62,49 +65,53 @@ class Auth():
             return '无效Token'
 
 
-def authenticate(password):
+def authenticate(username, password):
     """
     用户登录，登录成功返回token
-    :param password:
-    :return: json
+    :param username: str
+    :param password: str
+    :return: str|boolean
     """
-    authPassword = channel_conf(const.HTTP).get('http_auth_password')
-    if (authPassword != password):
+    myredis = RedisSingleton()
+    authPassword = myredis.redis.hget('sfbot:'+username, 'password')
+    if authPassword is None:
+        return False
+    elif (authPassword.decode() != password):
         return False
     else:
         login_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-        token = Auth.encode_auth_token(password, login_time)
+        token = Auth.encode_auth_token(username, password, login_time)
         return token
 
 
 def identify(request):
     """
     用户鉴权
-    :return: list
+    :return: boolean,str
     """
     try:
-        authPassword = channel_conf(const.HTTP).get('http_auth_password')
-        if (not authPassword):
-            return True
         if (request is None):
-            return False
+            return False, None
         authorization = request.cookies.get('Authorization')
         if (authorization):
             payload = Auth.decode_auth_token(authorization)
             if not isinstance(payload, str):
-                authPassword = channel_conf(
-                    const.HTTP).get('http_auth_password')
-                password = payload['data']['id']
-                if (password != authPassword):
-                    return False
+                username = payload['data']['id']
+                password = payload['data']['password']
+                myredis = RedisSingleton()
+                authPassword = myredis.redis.hget('sfbot:'+username, 'password')
+                if authPassword is None:
+                    return False, None
+                elif (authPassword.decode() != password):
+                    return False, None
                 else:
-                    return True
-        return False
+                    return True, username
+        return False, None
  
     except jwt.ExpiredSignatureError:
         #result = 'Token已更改，请重新登录获取'
-        return False
+        return False, None
  
     except jwt.InvalidTokenError:
         #result = '没有提供认证token'
-        return False
+        return False, None

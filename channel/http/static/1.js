@@ -21,7 +21,7 @@ function ConvState(wrapper, form, params) {
         $(this.wrapper).find('#messages').stop().animate({ scrollTop: $(this.wrapper).find('#messages')[0].scrollHeight }, 600);
     }.bind(this);
 };
-ConvState.prototype.printAnswer = function (uuid, answer = '我是 亿推视频 客服人员。亿推视频的目标是将现有资料转化为高质量视频，亿推让推广变得更轻松！') {
+ConvState.prototype.printAnswer = function (uuid, answer = 'Nice to meet you. Ask me what you want to know.') {
     setTimeout(function () {
         var messageObj = $(this.wrapper).find(`#${uuid}`);
         answer = marked.parse(answer);

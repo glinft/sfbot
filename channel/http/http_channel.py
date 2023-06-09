@@ -45,12 +45,14 @@ async def return_stream(data):
 
 @socketio.on('message', namespace='/sfbot/chat')
 def stream(data):
-    if (auth.identify(request) == False):
+    flag, orgid = auth.identify(request)
+    if (flag == False):
         client_sid = request.sid
         socketio.server.disconnect(client_sid)
         return
     data = json.loads(data["data"])
     if (data):
+        data['orgid'] = orgid
         img_match_prefix = functions.check_prefix(
             data["msg"], channel_conf_val(const.HTTP, 'image_create_prefix'))
         if img_match_prefix:
@@ -76,20 +78,23 @@ def disconnect():
 
 @http_app.route("/sfbot/chat", methods=['POST'])
 def chat():
-    if (auth.identify(request) == False):
+    flag, orgid = auth.identify(request)
+    if (flag == False):
         return
     data = json.loads(request.data)
     if data:
         msg = data['msg']
         if not msg:
             return
+        data['orgid'] = orgid
         reply_text = HttpChannel().handle(data=data)
         return {'result': reply_text}
 
 
 @http_app.route("/sfbot", methods=['GET'])
 def index():
-    if (auth.identify(request) == False):
+    flag, orgid = auth.identify(request)
+    if (flag == False):
         return login()
     return render_template('index.html')
 
@@ -99,11 +104,12 @@ def login():
     response = make_response("<html></html>", 301)
     response.headers.add_header('content-type', 'text/plain')
     response.headers.add_header('location', '/sfbot')
-    if (auth.identify(request) == True):
+    flag, orgid = auth.identify(request)
+    if (flag == True):
         return response
     else:
         if request.method == "POST":
-            token = auth.authenticate(request.form['password'])
+            token = auth.authenticate(request.form['username'], request.form['password'])
             if (token != False):
                 response.set_cookie(key='Authorization', value=token)
                 return response
@@ -122,6 +128,8 @@ class HttpChannel(Channel):
         query = data["msg"]
         id = data["id"]
         context['from_user_id'] = str(id)
+        orgid = data["orgid"]
+        context['from_org_id'] = str(orgid)
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
             'channel': self, 'context': query,  "args": context}))
         reply = e_context['reply']
@@ -136,6 +144,8 @@ class HttpChannel(Channel):
         context = dict()
         id = data["id"]
         context['from_user_id'] = str(id)
+        orgid = data["orgid"]
+        context['from_org_id'] = str(orgid)
         context['stream'] = True
         context['origin'] = data["msg"]
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
