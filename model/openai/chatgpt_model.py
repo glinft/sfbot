@@ -201,7 +201,7 @@ class Session(object):
         if len(docs) > 0 and float(docs[0].vector_score) > float(threshold):
             log.info(f"[CHATGPT] score:{docs[0].vector_score} > threshold:{threshold}")
             return None
-        if len(session) > 0:
+        if len(session) > 0 and session[0]['role'] == 'system':
             session.pop(0)
         # system_prompt = model_conf(const.OPEN_AI).get("character_desc", "")
         system_prompt = myredis.redis.hget('sfbot:'+org_id, 'character_desc').decode()

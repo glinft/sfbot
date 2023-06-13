@@ -93,6 +93,8 @@ def identify(request):
         if (request is None):
             return False, None
         authorization = request.cookies.get('Authorization')
+        if not authorization:
+            authorization = request.headers.get('Authorization')
         if (authorization):
             payload = Auth.decode_auth_token(authorization)
             if not isinstance(payload, str):

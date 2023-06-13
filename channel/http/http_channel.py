@@ -17,7 +17,15 @@ from plugins.plugin_manager import *
 
 http_app = Flask(__name__,)
 socketio = SocketIO(http_app, path='/sfbot/socket.io', cors_allowed_origins=['https://api.sflow.io'], close_timeout=5)
-# CORS(app)
+CORS(http_app) # supports_credentials=True
+
+@http_app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+    return response
 
 # 自动重载模板文件
 http_app.jinja_env.auto_reload = True
@@ -116,6 +124,25 @@ def login():
         else:
             return render_template('login.html')
     response.headers.set('location', '/sfbot/login?err=登录失败')
+    return response
+
+
+@http_app.route("/sfbot/login2", methods=['POST'])
+def login2():
+    response = make_response("<html></html>", 200)
+    response.headers.add_header('content-type', 'text/plain')
+    flag, orgid = auth.identify(request)
+    if (flag == True):
+        return response
+    else:
+        if request.method == "POST":
+            token = auth.authenticate(request.form['username'], request.form['password'])
+            if (token != False):
+                response = make_response(token, 200)
+                response.set_cookie(key='Authorization', value=token)
+                return response
+    response = make_response("<html></html>", 400)
+    response.headers.add_header('content-type', 'text/plain')
     return response
 
 
