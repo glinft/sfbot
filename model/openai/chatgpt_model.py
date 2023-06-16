@@ -207,8 +207,7 @@ class Session(object):
         system_prompt = myredis.redis.hget('sfbot:'+org_id, 'character_desc').decode()
         if len(docs) > 0:
             system_prompt += '\nPlease respond to customer inquiries based on the following context, which is separated by 3 backticks.'
-            system_prompt += '\nReply \"Sorry, I have no ideas.\", if customer inquiry is not related to Neuvition and LiDAR products.'
-            system_prompt += '\nReply \"Sorry, I have no ideas.\", if you don\'t know the answer or you are not sure.'
+            system_prompt += '\nReply \"Sorry, I have no ideas.\", If you don\'t know the answer or you are not sure, don\'t try to make it up.'
             system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
             system_prompt += '\nContext:\n```'
             for i, doc in enumerate(docs):
