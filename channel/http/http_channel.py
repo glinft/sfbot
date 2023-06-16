@@ -107,6 +107,11 @@ def index():
     return render_template('index.html')
 
 
+@http_app.route("/sfbot/static/<path:filename>")
+def serve_css(filename):
+    return http_app.send_static_file(filename)
+
+
 @http_app.route("/sfbot/login", methods=['POST', 'GET'])
 def login():
     response = make_response("<html></html>", 301)
