@@ -32,9 +32,9 @@ class ChatGPTModel(Model):
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
             if query in clear_memory_commands:
                 Session.clear_session(from_user_id)
-                return '记忆已清除'
+                return 'Session is reset.'
 
-            new_query = Session.build_session_query(query, from_user_id, from_org_id)
+            new_query, refurls = Session.build_session_query(query, from_user_id, from_org_id)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
             log.debug("[CHATGPT] session query={}".format(new_query))
@@ -45,6 +45,9 @@ class ChatGPTModel(Model):
 
             reply_content = self.reply_text(new_query, from_user_id, 0)
             #log.debug("[CHATGPT] new_query={}, user={}, reply_cont={}".format(new_query, from_user_id, reply_content))
+            if len(refurls) > 0:
+                for i, url in enumerate(refurls):
+                    reply_content+=f"\n[{i}] {url}"
             return reply_content
 
         elif context.get('type', None) == 'IMAGE_CREATE':
@@ -98,7 +101,7 @@ class ChatGPTModel(Model):
         try:
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
-            new_query = Session.build_session_query(query, from_user_id, from_org_id)
+            new_query, refurls = Session.build_session_query(query, from_user_id, from_org_id)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
             res = openai.ChatCompletion.create(
@@ -122,6 +125,9 @@ class ChatGPTModel(Model):
                 yield False,full_response
             Session.save_session(query, full_response, from_user_id)
             log.info("[chatgpt]: reply={}", full_response)
+            if len(refurls) > 0:
+                for i, url in enumerate(refurls):
+                    full_response+=f"\n[{i}] {url}"
             yield True,full_response
 
         except openai.error.RateLimitError as e:
@@ -192,6 +198,7 @@ class Session(object):
         if match:
             orgno = int(match.group(1))
 
+        refurls = []
         session = user_session.get(user_id, [])
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
         myredis = RedisSingleton()
@@ -200,7 +207,7 @@ class Session(object):
         threshold = model_conf(const.OPEN_AI).get("similarity_threshold", 0.3)
         if len(docs) > 0 and float(docs[0].vector_score) > float(threshold):
             log.info(f"[CHATGPT] score:{docs[0].vector_score} > threshold:{threshold}")
-            return None
+            return None, []
         if len(session) > 0 and session[0]['role'] == 'system':
             session.pop(0)
         # system_prompt = model_conf(const.OPEN_AI).get("character_desc", "")
@@ -211,16 +218,21 @@ class Session(object):
             system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
             system_prompt += '\nContext:\n```'
             for i, doc in enumerate(docs):
-                system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
                 log.info(f"{i}) {doc.id} {doc.category} {doc.vector_score}")
+                system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
+                if float(doc.vector_score) < 0.18:
+                    docurl = myredis.hget(doc.id, 'source')
+                    if docurl is not None:
+                        refurls.append(docurl)
             system_prompt += '\n```\n'
+            refurls = list(set(refurls))
         log.info("[CHATGPT] prompt={}".format(system_prompt))
         system_item = {'role': 'system', 'content': system_prompt}
         session.insert(0, system_item)
         user_session[user_id] = session
         user_item = {'role': 'user', 'content': query}
         session.append(user_item)
-        return session
+        return session, refurls
 
     @staticmethod
     def save_session(query, answer, user_id, used_tokens=0):
