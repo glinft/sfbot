@@ -46,8 +46,9 @@ class ChatGPTModel(Model):
             reply_content = self.reply_text(new_query, from_user_id, 0)
             #log.debug("[CHATGPT] new_query={}, user={}, reply_cont={}".format(new_query, from_user_id, reply_content))
             if len(refurls) > 0:
+                reply_content+='\n'
                 for i, url in enumerate(refurls):
-                    reply_content+=f"\n[{i}] {url}"
+                    reply_content+=f"\n- [{i+1}] {url}"
             return reply_content
 
         elif context.get('type', None) == 'IMAGE_CREATE':
@@ -126,8 +127,9 @@ class ChatGPTModel(Model):
             Session.save_session(query, full_response, from_user_id)
             log.info("[chatgpt]: reply={}", full_response)
             if len(refurls) > 0:
+                reply_content+='\n'
                 for i, url in enumerate(refurls):
-                    full_response+=f"\n[{i}] {url}"
+                    full_response+=f"\n- [{i+1}] {url}"
             yield True,full_response
 
         except openai.error.RateLimitError as e:
@@ -220,9 +222,11 @@ class Session(object):
             for i, doc in enumerate(docs):
                 log.info(f"{i}) {doc.id} {doc.category} {doc.vector_score}")
                 system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
-                if float(doc.vector_score) < 0.18:
-                    docurl = myredis.hget(doc.id, 'source')
+                if float(doc.vector_score) < 0.2:
+                    docurl = myredis.redis.hget(doc.id, 'source')
                     if docurl is not None:
+                        docurl = docurl.decode()
+                        log.info(f"{i}) {doc.id} URL={docurl}")
                         refurls.append(docurl)
             system_prompt += '\n```\n'
             refurls = list(set(refurls))
