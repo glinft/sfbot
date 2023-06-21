@@ -7,9 +7,15 @@ from common import log
 from common.redis import RedisSingleton
 import openai
 import time
+import json
 import re
 
 user_session = dict()
+
+def get_unique_by_key(data, key):
+    seen = set()
+    unique_list = [d for d in data if d.get(key) not in seen and not seen.add(d.get(key))]
+    return unique_list
 
 # OpenAI对话模型API (可用)
 class ChatGPTModel(Model):
@@ -46,9 +52,9 @@ class ChatGPTModel(Model):
             reply_content = self.reply_text(new_query, from_user_id, 0)
             #log.debug("[CHATGPT] new_query={}, user={}, reply_cont={}".format(new_query, from_user_id, reply_content))
             if len(refurls) > 0:
-                reply_content+='\n'
-                for i, url in enumerate(refurls):
-                    reply_content+=f"\n- [{i+1}] {url}"
+                reply_content+='\n```sf-json\n'
+                reply_content+=json.dumps(refurls)
+                reply_content+='\n```\n'
             return reply_content
 
         elif context.get('type', None) == 'IMAGE_CREATE':
@@ -127,9 +133,9 @@ class ChatGPTModel(Model):
             Session.save_session(query, full_response, from_user_id)
             log.info("[chatgpt]: reply={}", full_response)
             if len(refurls) > 0:
-                reply_content+='\n'
-                for i, url in enumerate(refurls):
-                    full_response+=f"\n- [{i+1}] {url}"
+                full_response+='\n```sf-json\n'
+                full_response+=json.dumps(refurls)
+                full_response+='\n```\n'
             yield True,full_response
 
         except openai.error.RateLimitError as e:
@@ -224,12 +230,21 @@ class Session(object):
                 system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
                 if float(doc.vector_score) < 0.2:
                     docurl = myredis.redis.hget(doc.id, 'source')
+                    urltitle = None
                     if docurl is not None:
-                        docurl = docurl.decode()
-                        log.info(f"{i}) {doc.id} URL={docurl}")
-                        refurls.append(docurl)
+                        try:
+                            docurl = docurl.decode()
+                            urlkey = 'url:'+docurl
+                            urlmeta = json.loads(myredis.redis.lindex(urlkey, 0).decode())
+                            urltitle = urlmeta['title']
+                        except json.JSONDecodeError as e:
+                            print("Error decoding JSON:", urlkey, str(e))
+                        except Exception as e:
+                            print("Error URL:", urlkey, str(e))
+                        log.info(f"{i}) {doc.id} URL={docurl} Title={urltitle}")
+                        refurls.append({'url': docurl, 'title': urltitle})
             system_prompt += '\n```\n'
-            refurls = list(set(refurls))
+            refurls = get_unique_by_key(refurls, 'url')
         log.info("[CHATGPT] prompt={}".format(system_prompt))
         system_item = {'role': 'system', 'content': system_prompt}
         session.insert(0, system_item)
