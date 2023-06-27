@@ -230,11 +230,12 @@ class Session(object):
                 system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
                 if float(doc.vector_score) < 0.2:
                     docurl = myredis.redis.hget(doc.id, 'source')
+                    urlkey = myredis.redis.hget(doc.id, 'refkey')
                     urltitle = None
                     if docurl is not None:
                         try:
                             docurl = docurl.decode()
-                            urlkey = 'url:'+docurl
+                            urlkey = urlkey.decode()
                             urlmeta = json.loads(myredis.redis.lindex(urlkey, 0).decode())
                             urltitle = urlmeta['title']
                         except json.JSONDecodeError as e:
