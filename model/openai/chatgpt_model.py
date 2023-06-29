@@ -9,6 +9,7 @@ import openai
 import time
 import json
 import re
+import requests
 
 user_session = dict()
 
@@ -72,13 +73,15 @@ class ChatGPTModel(Model):
                 presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0)  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
                 )
             reply_content = response.choices[0]['message']['content']
-            used_token = response['usage']['total_tokens']
+            used_tokens = response['usage']['total_tokens']
+            prompt_tokens = response['usage']['prompt_tokens']
+            completion_tokens = response['usage']['completion_tokens']
             log.debug(response)
             log.info("[CHATGPT] usage={}", response['usage'])
             log.info("[CHATGPT] reply={}", reply_content)
             if reply_content:
                 # save conversation
-                Session.save_session(query, reply_content, user_id, used_token)
+                Session.save_session(query, reply_content, user_id, used_tokens, prompt_tokens, completion_tokens)
             return response.choices[0]['message']['content']
         except openai.error.RateLimitError as e:
             # rate limit exception
@@ -255,7 +258,7 @@ class Session(object):
         return session, refurls
 
     @staticmethod
-    def save_session(query, answer, user_id, used_tokens=0):
+    def save_session(query, answer, user_id, used_tokens=0, prompt_tokens=0, completion_tokens=0):
         max_tokens = model_conf(const.OPEN_AI).get('conversation_max_tokens')
         max_history_num = model_conf(const.OPEN_AI).get('max_history_num', None)
         if not max_tokens or max_tokens > 4000:
@@ -276,6 +279,16 @@ class Session(object):
             while len(session) > max_history_num * 2 + 1:
                 session.pop(1)
                 session.pop(1)
+
+        gqlurl = 'http://127.0.0.1:5000/graphql'
+        gqlfunc = 'createChatHistory'
+        headers = { "Content-Type": "application/json", }
+        orgid = 3
+        similarity = 0.8
+        query = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgid},question:"{query}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
+        gqldata = { "query": query, "variables": {}, }
+        gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
+        log.info("[HISTORY]", gqlresp)
 
     @staticmethod
     def clear_session(user_id):
