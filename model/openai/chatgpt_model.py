@@ -10,13 +10,42 @@ import time
 import json
 import re
 import requests
+import base64
+import tiktoken
 
 user_session = dict()
+
+def get_org_id(string):
+    pattern = r'org:(\d+)'
+    match = re.search(pattern, string)
+    orgid = 0
+    if match:
+        orgid = int(match.group(1))
+    return orgid
 
 def get_unique_by_key(data, key):
     seen = set()
     unique_list = [d for d in data if d.get(key) not in seen and not seen.add(d.get(key))]
     return unique_list
+
+def num_tokens_from_string(string):
+    encoding = tiktoken.get_encoding("cl100k_base")
+    num_tokens = len(encoding.encode(string))
+    return num_tokens
+
+def num_tokens_from_messages(messages):
+    encoding = tiktoken.get_encoding("cl100k_base")
+    tokens_per_message = 4
+    tokens_per_name = -1
+    num_tokens = 0
+    for message in messages:
+        num_tokens += tokens_per_message
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+            if key == "name":
+                num_tokens += tokens_per_name
+    num_tokens += 3
+    return num_tokens
 
 # OpenAI对话模型API (可用)
 class ChatGPTModel(Model):
@@ -41,7 +70,7 @@ class ChatGPTModel(Model):
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
-            new_query, refurls = Session.build_session_query(query, from_user_id, from_org_id)
+            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
             log.debug("[CHATGPT] session query={}".format(new_query))
@@ -50,7 +79,7 @@ class ChatGPTModel(Model):
             #     # reply in stream
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
-            reply_content = self.reply_text(new_query, from_user_id, 0)
+            reply_content = self.reply_text(new_query, from_user_id, from_org_id, similarity, 0)
             #log.debug("[CHATGPT] new_query={}, user={}, reply_cont={}".format(new_query, from_user_id, reply_content))
             if len(refurls) > 0:
                 reply_content+='\n```sf-json\n'
@@ -61,7 +90,7 @@ class ChatGPTModel(Model):
         elif context.get('type', None) == 'IMAGE_CREATE':
             return self.create_img(query, 0)
 
-    def reply_text(self, query, user_id, retry_count=0):
+    def reply_text(self, query, user_id, org_id, similarity, retry_count=0):
         try:
             response = openai.ChatCompletion.create(
                 model= model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
@@ -81,7 +110,7 @@ class ChatGPTModel(Model):
             log.info("[CHATGPT] reply={}", reply_content)
             if reply_content:
                 # save conversation
-                Session.save_session(query, reply_content, user_id, used_tokens, prompt_tokens, completion_tokens)
+                Session.save_session(query, reply_content, user_id, org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
             return response.choices[0]['message']['content']
         except openai.error.RateLimitError as e:
             # rate limit exception
@@ -89,7 +118,7 @@ class ChatGPTModel(Model):
             if retry_count < 1:
                 time.sleep(5)
                 log.warn("[CHATGPT] RateLimit exceed, 第{}次重试".format(retry_count+1))
-                return self.reply_text(query, user_id, retry_count+1)
+                return self.reply_text(query, user_id, org_id, similarity, retry_count+1)
             else:
                 return "提问太快啦，请休息一下再问我吧"
         except openai.error.APIConnectionError as e:
@@ -111,7 +140,7 @@ class ChatGPTModel(Model):
         try:
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
-            new_query, refurls = Session.build_session_query(query, from_user_id, from_org_id)
+            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
             res = openai.ChatCompletion.create(
@@ -133,7 +162,11 @@ class ChatGPTModel(Model):
                 if(chunk_message):
                     full_response+=chunk_message
                 yield False,full_response
-            Session.save_session(query, full_response, from_user_id)
+
+            prompt_tokens = num_tokens_from_messages(new_query)
+            completion_tokens = num_tokens_from_string(full_response)
+            used_tokens = prompt_tokens + completion_tokens
+            Session.save_session(query, full_response, from_user_id, from_org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
             log.info("[chatgpt]: reply={}", full_response)
             if len(refurls) > 0:
                 full_response+='\n```sf-json\n'
@@ -147,7 +180,7 @@ class ChatGPTModel(Model):
             if retry_count < 1:
                 time.sleep(5)
                 log.warn("[CHATGPT] RateLimit exceed, 第{}次重试".format(retry_count+1))
-                yield True, self.reply_text_stream(query, from_user_id, retry_count+1)
+                yield True, self.reply_text_stream(query, context, retry_count+1)
             else:
                 yield True, "提问太快啦，请休息一下再问我吧"
         except openai.error.APIConnectionError as e:
@@ -203,12 +236,7 @@ class Session(object):
         :param user_id: from user id
         :return: query content with conversaction
         '''
-        pattern = r'org:(\d+)'
-        match = re.search(pattern, org_id)
-        orgno = 0
-        if match:
-            orgno = int(match.group(1))
-
+        orgno = get_org_id(org_id)
         refurls = []
         session = user_session.get(user_id, [])
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
@@ -218,12 +246,15 @@ class Session(object):
         threshold = model_conf(const.OPEN_AI).get("similarity_threshold", 0.3)
         if len(docs) > 0 and float(docs[0].vector_score) > float(threshold):
             log.info(f"[CHATGPT] score:{docs[0].vector_score} > threshold:{threshold}")
-            return None, []
+            similarity = 1.0 - float(docs[0].vector_score)
+            return None, [], similarity
         if len(session) > 0 and session[0]['role'] == 'system':
             session.pop(0)
+        similarity = 0.0
         # system_prompt = model_conf(const.OPEN_AI).get("character_desc", "")
         system_prompt = myredis.redis.hget('sfbot:'+org_id, 'character_desc').decode()
         if len(docs) > 0:
+            similarity = 1.0 - float(docs[0].vector_score)
             system_prompt += '\nPlease respond to customer inquiries based on the following context, which is separated by 3 backticks.'
             system_prompt += '\nReply \"Sorry, I have no ideas.\", If you don\'t know the answer or you are not sure, don\'t try to make it up.'
             system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
@@ -255,10 +286,10 @@ class Session(object):
         user_session[user_id] = session
         user_item = {'role': 'user', 'content': query}
         session.append(user_item)
-        return session, refurls
+        return session, refurls, similarity
 
     @staticmethod
-    def save_session(query, answer, user_id, used_tokens=0, prompt_tokens=0, completion_tokens=0):
+    def save_session(query, answer, user_id, org_id, used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0):
         max_tokens = model_conf(const.OPEN_AI).get('conversation_max_tokens')
         max_history_num = model_conf(const.OPEN_AI).get('max_history_num', None)
         if not max_tokens or max_tokens > 4000:
@@ -283,12 +314,14 @@ class Session(object):
         gqlurl = 'http://127.0.0.1:5000/graphql'
         gqlfunc = 'createChatHistory'
         headers = { "Content-Type": "application/json", }
-        orgid = 3
-        similarity = 0.8
-        query = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgid},question:"{query}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
-        gqldata = { "query": query, "variables": {}, }
+        org_id = get_org_id(org_id)
+        question = base64.b64encode(session[-2]['content'].encode('utf-8')).decode('utf-8')
+        answer = base64.b64encode(answer.encode('utf-8')).decode('utf-8')
+        xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{org_id},question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
+        # log.info("[HISTORY] response={}".format(xquery))
+        gqldata = { "query": xquery, "variables": {}, }
         gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
-        log.info("[HISTORY]", gqlresp)
+        log.info("[HISTORY] response={}".format(gqlresp.text))
 
     @staticmethod
     def clear_session(user_id):
