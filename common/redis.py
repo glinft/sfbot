@@ -20,7 +20,7 @@ class RedisSingleton:
         embedded_query,
         index_name: str = "sflow-index",
         vector_field: str = "text_vector",
-        return_fields: list = ["id", "category", "vector_score"],
+        return_fields: list = ["id", "orgid", "category", "vector_score"],
         hybrid_fields: str = "*",
         k: int = 3,
     ) -> List[dict]:

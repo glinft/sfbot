@@ -11,6 +11,7 @@ import json
 import re
 import requests
 import base64
+import random
 import tiktoken
 
 user_session = dict()
@@ -74,6 +75,12 @@ class ChatGPTModel(Model):
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
             log.debug("[CHATGPT] session query={}".format(new_query))
+
+            if new_query[-1]['role'] == 'assistant':
+                reply_message = new_query.pop()
+                reply_content = reply_message['content']
+                Session.save_session(new_query, reply_content, from_user_id, from_org_id, 0, 0, 0, similarity)
+                return reply_content
 
             # if context.get('stream'):
             #     # reply in stream
@@ -241,8 +248,28 @@ class Session(object):
         session = user_session.get(user_id, [])
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
         myredis = RedisSingleton()
-        docs = myredis.ft_search(embedded_query=myquery, hybrid_fields=myredis.create_hybrid_field(str(orgno), "category", "kb"))
+        system_prompt = myredis.redis.hget('sfbot:'+org_id, 'character_desc').decode()
+        qnaorg = "(0|{})".format(orgno)
+        qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field(qnaorg, "category", "qa"))
+        if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
+            qna = qnas[0]
+            log.info(f"1) {qna.id} {qna.orgid} {qna.category} {qna.vector_score}")
+            qnatext = myredis.redis.hget(qna.id, 'text').decode()
+            answers = json.loads(qnatext)
+            answer = random.choice(answers)
+            similarity = 1.0 - float(qna.vector_score)
+            user_item = {'role': 'user', 'content': query}
+            answ_item = {'role': 'assistant', 'content': answer}
+            if len(session) > 0 and session[0]['role'] == 'system':
+                session.pop(0)
+            system_item = {'role': 'system', 'content': system_prompt}
+            session.insert(0, system_item)
+            user_session[user_id] = session
+            session.append(user_item)
+            session.append(answ_item)
+            return session, [], similarity
 
+        docs = myredis.ft_search(embedded_query=myquery, hybrid_fields=myredis.create_hybrid_field(str(orgno), "category", "kb"))
         threshold = model_conf(const.OPEN_AI).get("similarity_threshold", 0.3)
         if len(docs) > 0 and float(docs[0].vector_score) > float(threshold):
             log.info(f"[CHATGPT] score:{docs[0].vector_score} > threshold:{threshold}")
@@ -252,7 +279,6 @@ class Session(object):
             session.pop(0)
         similarity = 0.0
         # system_prompt = model_conf(const.OPEN_AI).get("character_desc", "")
-        system_prompt = myredis.redis.hget('sfbot:'+org_id, 'character_desc').decode()
         if len(docs) > 0:
             similarity = 1.0 - float(docs[0].vector_score)
             system_prompt += '\nPlease respond to customer inquiries based on the following context, which is separated by 3 backticks.'
@@ -260,7 +286,7 @@ class Session(object):
             system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
             system_prompt += '\nContext:\n```'
             for i, doc in enumerate(docs):
-                log.info(f"{i}) {doc.id} {doc.category} {doc.vector_score}")
+                log.info(f"{i}) {doc.id} {doc.orgid} {doc.category} {doc.vector_score}")
                 system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
                 if float(doc.vector_score) < 0.2:
                     docurl = myredis.redis.hget(doc.id, 'source')
