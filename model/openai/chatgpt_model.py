@@ -6,6 +6,7 @@ from common import const
 from common import log
 from common.redis import RedisSingleton
 import openai
+import os
 import time
 import json
 import re
@@ -13,8 +14,12 @@ import requests
 import base64
 import random
 import tiktoken
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import FAISS
 
 user_session = dict()
+md5sum_pattern = r'^[0-9a-f]{32}$'
+faiss_store_root= "/opt/faiss/"
 
 def get_org_id(string):
     pattern = r'org:(\d+)'
@@ -243,9 +248,47 @@ class Session(object):
         :param user_id: from user id
         :return: query content with conversaction
         '''
+        session = user_session.get(user_id, [])
+        if re.match(md5sum_pattern, user_id) and os.path.exists(f"{faiss_store_root}{user_id}"):
+            faiss_store_path = f"{faiss_store_root}{user_id}"
+            mykey = model_conf(const.OPEN_AI).get('api_key')
+            embeddings = OpenAIEmbeddings(openai_api_key=mykey)
+            log.info("[FAISS] try to load local store")
+            dbx = FAISS.load_local(faiss_store_path, embeddings)
+            log.info("[FAISS] local store loaded")
+            similarity = 0.0
+            docs = dbx.similarity_search_with_score(query, k=3)
+            log.info("[FAISS] semantic search done")
+            if len(docs) == 0:
+                log.info("[FAISS] semantic search: None")
+                return None, [], similarity
+            similarity = float(docs[0][1])
+            if len(docs) > 0 and similarity < 0.6:
+                log.info(f"[FAISS] semantic search: score:{similarity} < threshold:0.6")
+                return None, [], similarity
+            system_prompt = 'You are a good assistant.'
+            system_prompt += '\nReply \"Sorry, I have no ideas.\", If you don\'t know the answer or you are not sure, don\'t try to make it up.'
+            system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
+            system_prompt += '\nPlease respond to customer inquiries based on the following context, which is separated by 3 backticks.'
+            system_prompt += '\nContext:\n```'
+            for doc, score in docs:
+                log.info("[FAISS] {} {}".format(score, json.dumps(doc.metadata)))
+                if score < 0.6:
+                    break
+                system_prompt += '\n' + doc.page_content
+            system_prompt += '\n```\n'
+            log.info("[FAISS] prompt={}".format(system_prompt))
+            if len(session) > 0 and session[0]['role'] == 'system':
+                session.pop(0)
+            system_item = {'role': 'system', 'content': system_prompt}
+            session.insert(0, system_item)
+            user_session[user_id] = session
+            user_item = {'role': 'user', 'content': query}
+            session.append(user_item)
+            return session, [], similarity
+
         orgno = get_org_id(org_id)
         refurls = []
-        session = user_session.get(user_id, [])
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
         myredis = RedisSingleton()
         system_prompt = myredis.redis.hget('sfbot:'+org_id, 'character_desc').decode()
@@ -269,44 +312,45 @@ class Session(object):
             session.append(answ_item)
             return session, [], similarity
 
+        similarity = 0.0
         docs = myredis.ft_search(embedded_query=myquery, hybrid_fields=myredis.create_hybrid_field(str(orgno), "category", "kb"))
-        threshold = model_conf(const.OPEN_AI).get("similarity_threshold", 0.3)
-        if len(docs) > 0 and float(docs[0].vector_score) > float(threshold):
-            log.info(f"[CHATGPT] score:{docs[0].vector_score} > threshold:{threshold}")
-            similarity = 1.0 - float(docs[0].vector_score)
+        if len(docs) == 0:
+            log.info("[RDSFT] semantic search: None")
             return None, [], similarity
+        similarity = 1.0 - float(docs[0].vector_score)
+        threshold = model_conf(const.OPEN_AI).get("similarity_threshold", 0.7)
+        if len(docs) > 0 and similarity < float(threshold):
+            log.info(f"[RDSFT] semantic search: score:{similarity} < threshold:{threshold}")
+            return None, [], similarity
+        # system_prompt = model_conf(const.OPEN_AI).get("character_desc", "")
+        system_prompt += '\nReply \"Sorry, I have no ideas.\", If you don\'t know the answer or you are not sure, don\'t try to make it up.'
+        system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
+        system_prompt += '\nPlease respond to customer inquiries based on the following context, which is separated by 3 backticks.'
+        system_prompt += '\nContext:\n```'
+        for i, doc in enumerate(docs):
+            log.info(f"{i}) {doc.id} {doc.orgid} {doc.category} {doc.vector_score}")
+            system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
+            if float(doc.vector_score) < 0.2:
+                docurl = myredis.redis.hget(doc.id, 'source')
+                urlkey = myredis.redis.hget(doc.id, 'refkey')
+                urltitle = None
+                if docurl is not None:
+                    try:
+                        docurl = docurl.decode()
+                        urlkey = urlkey.decode()
+                        urlmeta = json.loads(myredis.redis.lindex(urlkey, 0).decode())
+                        urltitle = urlmeta['title']
+                    except json.JSONDecodeError as e:
+                        print("Error decoding JSON:", urlkey, str(e))
+                    except Exception as e:
+                        print("Error URL:", urlkey, str(e))
+                    log.info(f"{i}) {doc.id} URL={docurl} Title={urltitle}")
+                    refurls.append({'url': docurl, 'title': urltitle})
+        system_prompt += '\n```\n'
+        refurls = get_unique_by_key(refurls, 'url')
+        log.info("[CHATGPT] prompt={}".format(system_prompt))
         if len(session) > 0 and session[0]['role'] == 'system':
             session.pop(0)
-        similarity = 0.0
-        # system_prompt = model_conf(const.OPEN_AI).get("character_desc", "")
-        if len(docs) > 0:
-            similarity = 1.0 - float(docs[0].vector_score)
-            system_prompt += '\nPlease respond to customer inquiries based on the following context, which is separated by 3 backticks.'
-            system_prompt += '\nReply \"Sorry, I have no ideas.\", If you don\'t know the answer or you are not sure, don\'t try to make it up.'
-            system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
-            system_prompt += '\nContext:\n```'
-            for i, doc in enumerate(docs):
-                log.info(f"{i}) {doc.id} {doc.orgid} {doc.category} {doc.vector_score}")
-                system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
-                if float(doc.vector_score) < 0.2:
-                    docurl = myredis.redis.hget(doc.id, 'source')
-                    urlkey = myredis.redis.hget(doc.id, 'refkey')
-                    urltitle = None
-                    if docurl is not None:
-                        try:
-                            docurl = docurl.decode()
-                            urlkey = urlkey.decode()
-                            urlmeta = json.loads(myredis.redis.lindex(urlkey, 0).decode())
-                            urltitle = urlmeta['title']
-                        except json.JSONDecodeError as e:
-                            print("Error decoding JSON:", urlkey, str(e))
-                        except Exception as e:
-                            print("Error URL:", urlkey, str(e))
-                        log.info(f"{i}) {doc.id} URL={docurl} Title={urltitle}")
-                        refurls.append({'url': docurl, 'title': urltitle})
-            system_prompt += '\n```\n'
-            refurls = get_unique_by_key(refurls, 'url')
-        log.info("[CHATGPT] prompt={}".format(system_prompt))
         system_item = {'role': 'system', 'content': system_prompt}
         session.insert(0, system_item)
         user_session[user_id] = session
@@ -336,6 +380,9 @@ class Session(object):
             while len(session) > max_history_num * 2 + 1:
                 session.pop(1)
                 session.pop(1)
+
+        if re.match(md5sum_pattern, user_id) and os.path.exists(f"{faiss_store_root}{user_id}"):
+            return
 
         gqlurl = 'http://127.0.0.1:5000/graphql'
         gqlfunc = 'createChatHistory'
