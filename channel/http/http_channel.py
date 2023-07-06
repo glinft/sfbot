@@ -38,18 +38,18 @@ http_app.config['SEND_FILE_MAX_AGE_DEFAULT'] = timedelta(seconds=1)
 async def return_stream(data):
     async for final, response in HttpChannel().handle_stream(data=data):
         try:
-            refurls=[]
+            extra={}
             splits=response.split("```sf-json")
             if len(splits)==2:
-                refurls=json.loads(splits[1][1:-4])
+                extra=json.loads(splits[1][1:-4])
                 response=splits[0]
             if (final):
                 socketio.server.emit(
-                    'disconnect', {'result': response, 'pages': refurls, 'final': final}, request.sid, namespace="/sfbot/chat")
+                    'disconnect', {'result': response, 'pages': extra['pages'], 'logid': extra['logid'], 'final': final}, request.sid, namespace="/sfbot/chat")
                 disconnect()
             else:
                 socketio.server.emit(
-                    'message', {'result': response, 'pages': refurls, 'final': final}, request.sid, namespace="/sfbot/chat")
+                    'message', {'result': response, 'pages': extra['pages'], 'logid': extra['logid'], 'final': final}, request.sid, namespace="/sfbot/chat")
         except Exception as e:
             disconnect()
             log.warn("[http]emit:{}", e)
@@ -101,12 +101,12 @@ def chat():
             return
         data['orgid'] = orgid
         reply_text = HttpChannel().handle(data=data)
-        refurls=[]
+        extra={}
         splits=reply_text.split("```sf-json")
         if len(splits)==2:
-            refurls=json.loads(splits[1][1:-4])
+            extra=json.loads(splits[1][1:-4])
             reply_text=splits[0]
-        return {'result': reply_text, 'pages': refurls}
+        return {'result': reply_text, 'pages': extra['pages'], 'logid': extra['logid']}
 
 
 @http_app.route("/sfbot", methods=['GET'])

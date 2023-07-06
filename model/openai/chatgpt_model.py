@@ -79,24 +79,26 @@ class ChatGPTModel(Model):
             new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
-            log.debug("[CHATGPT] session query={}".format(new_query))
 
+            log.debug("[CHATGPT] session query={}".format(new_query))
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                Session.save_session(new_query, reply_content, from_user_id, from_org_id, 0, 0, 0, similarity)
+                logid = Session.save_session(new_query, reply_content, from_user_id, from_org_id, 0, 0, 0, similarity)
+                reply_content+='\n```sf-json\n'
+                reply_content+=json.dumps({'logid':logid})
+                reply_content+='\n```\n'
                 return reply_content
 
             # if context.get('stream'):
             #     # reply in stream
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
-            reply_content = self.reply_text(new_query, from_user_id, from_org_id, similarity, 0)
-            #log.debug("[CHATGPT] new_query={}, user={}, reply_cont={}".format(new_query, from_user_id, reply_content))
-            if len(refurls) > 0:
-                reply_content+='\n```sf-json\n'
-                reply_content+=json.dumps(refurls)
-                reply_content+='\n```\n'
+            reply_content, logid = self.reply_text(new_query, from_user_id, from_org_id, similarity, 0)
+            reply_content+='\n```sf-json\n'
+            reply_content+=json.dumps({'pages':refurls,'logid':logid})
+            reply_content+='\n```\n'
+            #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, reply_content))
             return reply_content
 
         elif context.get('type', None) == 'IMAGE_CREATE':
@@ -120,10 +122,8 @@ class ChatGPTModel(Model):
             log.debug(response)
             log.info("[CHATGPT] usage={}", response['usage'])
             log.info("[CHATGPT] reply={}", reply_content)
-            if reply_content:
-                # save conversation
-                Session.save_session(query, reply_content, user_id, org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
-            return response.choices[0]['message']['content']
+            logid = Session.save_session(query, reply_content, user_id, org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
+            return reply_content, logid
         except openai.error.RateLimitError as e:
             # rate limit exception
             log.warn(e)
@@ -132,20 +132,20 @@ class ChatGPTModel(Model):
                 log.warn("[CHATGPT] RateLimit exceed, 第{}次重试".format(retry_count+1))
                 return self.reply_text(query, user_id, org_id, similarity, retry_count+1)
             else:
-                return "提问太快啦，请休息一下再问我吧"
+                return "提问太快啦，请休息一下再问我吧", None
         except openai.error.APIConnectionError as e:
             log.warn(e)
             log.warn("[CHATGPT] APIConnection failed")
-            return "我连接不到网络，请稍后重试"
+            return "我连接不到网络，请稍后重试", None
         except openai.error.Timeout as e:
             log.warn(e)
             log.warn("[CHATGPT] Timeout")
-            return "我没有收到消息，请稍后重试"
+            return "我没有收到消息，请稍后重试", None
         except Exception as e:
             # unknown exception
             log.exception(e)
             Session.clear_session(user_id)
-            return "请再问我一次吧"
+            return "请再问我一次吧", None
 
 
     async def reply_text_stream(self, query, context, retry_count=0):
@@ -155,6 +155,17 @@ class ChatGPTModel(Model):
             new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
+
+            log.debug("[CHATGPT] session query={}".format(new_query))
+            if new_query[-1]['role'] == 'assistant':
+                reply_message = new_query.pop()
+                reply_content = reply_message['content']
+                logid = Session.save_session(new_query, reply_content, from_user_id, from_org_id, 0, 0, 0, similarity)
+                reply_content+='\n```sf-json\n'
+                reply_content+=json.dumps({'logid':logid})
+                reply_content+='\n```\n'
+                yield True,reply_content
+
             res = openai.ChatCompletion.create(
                 model= model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
                 messages=new_query,
@@ -178,12 +189,11 @@ class ChatGPTModel(Model):
             prompt_tokens = num_tokens_from_messages(new_query)
             completion_tokens = num_tokens_from_string(full_response)
             used_tokens = prompt_tokens + completion_tokens
-            Session.save_session(query, full_response, from_user_id, from_org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
-            log.info("[chatgpt]: reply={}", full_response)
-            if len(refurls) > 0:
-                full_response+='\n```sf-json\n'
-                full_response+=json.dumps(refurls)
-                full_response+='\n```\n'
+            logid = Session.save_session(query, full_response, from_user_id, from_org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
+            full_response+='\n```sf-json\n'
+            full_response+=json.dumps({'pages':refurls,'logid':logid})
+            full_response+='\n```\n'
+            #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, full_response))
             yield True,full_response
 
         except openai.error.RateLimitError as e:
@@ -225,7 +235,7 @@ class ChatGPTModel(Model):
             if retry_count < 1:
                 time.sleep(5)
                 log.warn("[OPEN_AI] ImgCreate RateLimit exceed, 第{}次重试".format(retry_count+1))
-                return self.reply_text(query, retry_count+1)
+                return self.create_img(query, retry_count+1)
             else:
                 return "提问太快啦，请休息一下再问我吧"
         except Exception as e:
@@ -382,7 +392,7 @@ class Session(object):
                 session.pop(1)
 
         if re.match(md5sum_pattern, user_id) and os.path.exists(f"{faiss_store_root}{user_id}"):
-            return
+            return None
 
         gqlurl = 'http://127.0.0.1:5000/graphql'
         gqlfunc = 'createChatHistory'
@@ -391,10 +401,14 @@ class Session(object):
         question = base64.b64encode(session[-2]['content'].encode('utf-8')).decode('utf-8')
         answer = base64.b64encode(answer.encode('utf-8')).decode('utf-8')
         xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{org_id},question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
-        # log.info("[HISTORY] response={}".format(xquery))
+        # log.info("[HISTORY] request: {}".format(xquery))
         gqldata = { "query": xquery, "variables": {}, }
         gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
-        log.info("[HISTORY] response={}".format(gqlresp.text))
+        log.info("[HISTORY] response: {} {}".format(gqlresp.status_code, gqlresp.text))
+        if gqlresp.status_code != 200:
+            return None
+        chatlog = json.loads(gqlresp.text)
+        return chatlog['data']['createChatHistory']['id']
 
     @staticmethod
     def clear_session(user_id):
