@@ -172,6 +172,8 @@ class HttpChannel(Channel):
         context['from_user_id'] = str(id)
         orgid = data["orgid"]
         context['from_org_id'] = str(orgid)
+        res = data.get("res", 0)
+        context['res'] = str(res)
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
             'channel': self, 'context': query,  "args": context}))
         reply = e_context['reply']
@@ -188,6 +190,8 @@ class HttpChannel(Channel):
         context['from_user_id'] = str(id)
         orgid = data["orgid"]
         context['from_org_id'] = str(orgid)
+        res = data.get("res", 0)
+        context['res'] = str(res)
         context['stream'] = True
         context['origin'] = data["msg"]
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {

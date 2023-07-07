@@ -71,6 +71,7 @@ class ChatGPTModel(Model):
             log.info("[CHATGPT] query={}".format(query))
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
+            res = int(context['res'])
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
             if query in clear_memory_commands:
                 Session.clear_session(from_user_id)
@@ -95,8 +96,11 @@ class ChatGPTModel(Model):
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
             reply_content, logid = self.reply_text(new_query, from_user_id, from_org_id, similarity, 0)
+            resources = []
+            if res > 0:
+                resources = Session.get_resources(reply_content, from_user_id, from_org_id)
             reply_content+='\n```sf-json\n'
-            reply_content+=json.dumps({'pages':refurls,'logid':logid})
+            reply_content+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
             reply_content+='\n```\n'
             #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, reply_content))
             return reply_content
@@ -152,6 +156,7 @@ class ChatGPTModel(Model):
         try:
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
+            res = int(context['res'])
             new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
@@ -190,8 +195,11 @@ class ChatGPTModel(Model):
             completion_tokens = num_tokens_from_string(full_response)
             used_tokens = prompt_tokens + completion_tokens
             logid = Session.save_session(query, full_response, from_user_id, from_org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
+            resources = []
+            if res > 0:
+                resources = Session.get_resources(full_response, from_user_id, from_org_id)
             full_response+='\n```sf-json\n'
-            full_response+=json.dumps({'pages':refurls,'logid':logid})
+            reply_content+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
             full_response+='\n```\n'
             #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, full_response))
             yield True,full_response
@@ -297,12 +305,12 @@ class Session(object):
             session.append(user_item)
             return session, [], similarity
 
-        orgno = get_org_id(org_id)
+        orgnum = get_org_id(org_id)
+        qnaorg = "(0|{})".format(orgnum)
         refurls = []
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
         myredis = RedisSingleton()
         system_prompt = myredis.redis.hget('sfbot:'+org_id, 'character_desc').decode()
-        qnaorg = "(0|{})".format(orgno)
         qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field(qnaorg, "category", "qa"))
         if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
             qna = qnas[0]
@@ -323,7 +331,7 @@ class Session(object):
             return session, [], similarity
 
         similarity = 0.0
-        docs = myredis.ft_search(embedded_query=myquery, hybrid_fields=myredis.create_hybrid_field(str(orgno), "category", "kb"))
+        docs = myredis.ft_search(embedded_query=myquery, hybrid_fields=myredis.create_hybrid_field(str(orgnum), "category", "kb"))
         if len(docs) == 0:
             log.info("[RDSFT] semantic search: None")
             return None, [], similarity
@@ -414,3 +422,24 @@ class Session(object):
     def clear_session(user_id):
         user_session[user_id] = []
 
+    @staticmethod
+    def get_resources(query, user_id, org_id):
+        orgnum = get_org_id(org_id)
+        resorg = "(0|{})".format(orgnum)
+        myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
+        myredis = RedisSingleton()
+        ress = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(resorg, "category", "res"), k=5)
+        if len(ress) == 0:
+            return []
+
+        resources = []
+        for i, res in enumerate(ress):
+            resurl = myredis.redis.hget(res.id, 'url')
+            resnam = myredis.redis.hget(res.id, 'title')
+            vscore = 1.0 - float(res.vector_score)
+            if resurl is not None:
+                resurl = resurl.decode()
+                resnam = resnam.decode()
+                resources.append({'url':resurl,'name':resnam,'score':vscore})
+        resources = get_unique_by_key(resources, 'url')
+        return resources
