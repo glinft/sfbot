@@ -45,11 +45,11 @@ async def return_stream(data):
                 response=splits[0]
             if (final):
                 socketio.server.emit(
-                    'disconnect', {'result': response, 'pages': extra['pages'], 'logid': extra['logid'], 'final': final}, request.sid, namespace="/sfbot/chat")
+                    'disconnect', {'result': response, 'pages': extra['pages'], 'resources': extra['resources'], 'logid': extra['logid'], 'final': final}, request.sid, namespace="/sfbot/chat")
                 disconnect()
             else:
                 socketio.server.emit(
-                    'message', {'result': response, 'pages': extra['pages'], 'logid': extra['logid'], 'final': final}, request.sid, namespace="/sfbot/chat")
+                    'message', {'result': response, 'pages': extra['pages'], 'resources': extra['resources'], 'logid': extra['logid'], 'final': final}, request.sid, namespace="/sfbot/chat")
         except Exception as e:
             disconnect()
             log.warn("[http]emit:{}", e)
@@ -106,7 +106,7 @@ def chat():
         if len(splits)==2:
             extra=json.loads(splits[1][1:-4])
             reply_text=splits[0]
-        return {'result': reply_text, 'pages': extra['pages'], 'logid': extra['logid']}
+        return {'result': reply_text, 'pages': extra['pages'], 'resources': extra['resources'], 'logid': extra['logid']}
 
 
 @http_app.route("/sfbot", methods=['GET'])
