@@ -350,20 +350,23 @@ class Session(object):
             system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
             if float(doc.vector_score) < 0.2:
                 docurl = myredis.redis.hget(doc.id, 'source')
+                if docurl is None:
+                    continue
                 urlkey = myredis.redis.hget(doc.id, 'refkey')
+                if urlkey is None:
+                    continue
                 urltitle = None
-                if docurl is not None:
-                    try:
-                        docurl = docurl.decode()
-                        urlkey = urlkey.decode()
-                        urlmeta = json.loads(myredis.redis.lindex(urlkey, 0).decode())
-                        urltitle = urlmeta['title']
-                    except json.JSONDecodeError as e:
-                        print("Error decoding JSON:", urlkey, str(e))
-                    except Exception as e:
-                        print("Error URL:", urlkey, str(e))
-                    log.info(f"{i}) {doc.id} URL={docurl} Title={urltitle}")
-                    refurls.append({'url': docurl, 'title': urltitle})
+                try:
+                    docurl = docurl.decode()
+                    urlkey = urlkey.decode()
+                    urlmeta = json.loads(myredis.redis.lindex(urlkey, 0).decode())
+                    urltitle = urlmeta['title']
+                except json.JSONDecodeError as e:
+                    print("Error decoding JSON:", urlkey, str(e))
+                except Exception as e:
+                    print("Error URL:", urlkey, str(e))
+                log.info(f"{i}) {doc.id} URL={docurl} Title={urltitle}")
+                refurls.append({'url': docurl, 'title': urltitle})
         system_prompt += '\n```\n'
         refurls = get_unique_by_key(refurls, 'url')
         log.info("[CHATGPT] prompt={}".format(system_prompt))
