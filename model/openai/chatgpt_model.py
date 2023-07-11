@@ -53,6 +53,18 @@ def num_tokens_from_messages(messages):
     num_tokens += 3
     return num_tokens
 
+def increase_hit_count(fid, category, url=''):
+    gqlurl = 'http://127.0.0.1:5000/graphql'
+    gqlfunc = 'increaseHitCount'
+    headers = { "Content-Type": "application/json", }
+    query = f"mutation {gqlfunc} {{ {gqlfunc}( id:{fid}, category:\"{category}\", url:\"{url}\" ) }}"
+    gqldata = { "query": query, "variables": {}, }
+    gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
+    if gqlresp.status_code == 200:
+        print(datetime.now().strftime(time_fmt), f"GQL/{gqlfunc}: {category}:{fid}", gqlresp.json())
+    else:
+        print(datetime.now().strftime(time_fmt), f"GQL/{gqlfunc}: {category}:{fid} {gqlresp.status_code}")
+
 # OpenAI对话模型API (可用)
 class ChatGPTModel(Model):
     def __init__(self):
@@ -308,6 +320,7 @@ class Session(object):
         orgnum = get_org_id(org_id)
         qnaorg = "(0|{})".format(orgnum)
         refurls = []
+        hitdocs = []
         qna_output = None
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
         myredis = RedisSingleton()
@@ -318,6 +331,8 @@ class Session(object):
             qnatext = myredis.redis.hget(qna.id, 'text').decode()
             answers = json.loads(qnatext)
             qna_output = random.choice(answers)
+            fid = myredis.redis.hget(qna.id, 'id').decode()
+            increase_hit_count(fid, 'qa', '')
 
         similarity = 0.0
         docs = myredis.ft_search(embedded_query=myquery, hybrid_fields=myredis.create_hybrid_field(str(orgnum), "category", "kb"))
@@ -340,6 +355,18 @@ class Session(object):
         for i, doc in enumerate(docs):
             log.info(f"{i}) {doc.id} {doc.orgid} {doc.category} {doc.vector_score}")
             system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
+            if float(doc.vector_score) < 0.3:
+                urlhit = ''
+                docurl = myredis.redis.hget(doc.id, 'source')
+                if docurl is not None:
+                    urlhit = docurl.decode()
+                dockey = myredis.redis.hget(doc.id, 'dkey')
+                if dockey is not None:
+                    dockey = dockey.decode()
+                    dockeyparts = dockey.split(":")
+                    fct = dockeyparts[1]
+                    fid = dockeyparts[2]
+                    hitdocs.append({'id':fid,'category':fct,'url':urlhit,'key':f"{fid};{urlhit}"})
             if float(doc.vector_score) < 0.2:
                 docurl = myredis.redis.hget(doc.id, 'source')
                 if docurl is None:
@@ -360,8 +387,11 @@ class Session(object):
                 log.info(f"{i}) {doc.id} URL={docurl} Title={urltitle}")
                 refurls.append({'url': docurl, 'title': urltitle})
         system_prompt += '\n```\n'
-        refurls = get_unique_by_key(refurls, 'url')
         log.info("[CHATGPT] prompt={}".format(system_prompt))
+        refurls = get_unique_by_key(refurls, 'url')
+        hitdocs = get_unique_by_key(hitdocs, 'key')
+        for doc in hitdocs:
+            increase_hit_count(doc['fid'], doc['category'], doc['url'])
         if len(session) > 0 and session[0]['role'] == 'system':
             session.pop(0)
         system_item = {'role': 'system', 'content': system_prompt}
