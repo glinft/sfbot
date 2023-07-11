@@ -61,9 +61,9 @@ def increase_hit_count(fid, category, url=''):
     gqldata = { "query": query, "variables": {}, }
     gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
     if gqlresp.status_code == 200:
-        print(datetime.now().strftime(time_fmt), f"GQL/{gqlfunc}: {category}:{fid}", gqlresp.json())
+        log.info(f"GQL/{gqlfunc}: {category}:{fid}", gqlresp.json())
     else:
-        print(datetime.now().strftime(time_fmt), f"GQL/{gqlfunc}: {category}:{fid} {gqlresp.status_code}")
+        log.info(f"GQL/{gqlfunc}: {category}:{fid} {gqlresp.status_code}")
 
 # OpenAI对话模型API (可用)
 class ChatGPTModel(Model):
@@ -391,7 +391,7 @@ class Session(object):
         refurls = get_unique_by_key(refurls, 'url')
         hitdocs = get_unique_by_key(hitdocs, 'key')
         for doc in hitdocs:
-            increase_hit_count(doc['fid'], doc['category'], doc['url'])
+            increase_hit_count(doc['id'], doc['category'], doc['url'])
         if len(session) > 0 and session[0]['role'] == 'system':
             session.pop(0)
         system_item = {'role': 'system', 'content': system_prompt}
