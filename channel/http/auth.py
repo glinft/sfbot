@@ -53,16 +53,17 @@ class Auth():
         """
         try:
             # 取消过期时间验证
+            options = {'verify_exp': False}
             payload = jwt.decode(auth_token, channel_conf(const.HTTP).get(
-                'http_auth_secret_key'), algorithms='HS256')  # options={'verify_exp': False} 加上后不验证token过期时间
+                'http_auth_secret_key'), algorithms='HS256', options=options)
             if ('data' in payload and 'id' in payload['data']):
                 return payload
             else:
                 raise jwt.InvalidTokenError
         except jwt.ExpiredSignatureError:
-            return 'Token过期'
+            return 'Token Expired'
         except jwt.InvalidTokenError:
-            return '无效Token'
+            return 'Invalid Token'
 
 
 def authenticate(username, password):

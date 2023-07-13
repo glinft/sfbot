@@ -60,10 +60,8 @@ def increase_hit_count(fid, category, url=''):
     query = f"mutation {gqlfunc} {{ {gqlfunc}( id:{fid}, category:\"{category}\", url:\"{url}\" ) }}"
     gqldata = { "query": query, "variables": {}, }
     gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
-    if gqlresp.status_code == 200:
-        log.info(f"GQL/{gqlfunc}: {category}:{fid}", gqlresp.json())
-    else:
-        log.info(f"GQL/{gqlfunc}: {category}:{fid} {gqlresp.status_code}")
+    log.info(f"GQL/{gqlfunc}: {category}:{fid} {gqlresp.status_code} {query}")
+    log.debug(f"GQL/{gqlfunc}: {category}:{fid} {gqlresp.json()}")
 
 # OpenAI对话模型API (可用)
 class ChatGPTModel(Model):
@@ -334,8 +332,9 @@ class Session(object):
             fid = myredis.redis.hget(qna.id, 'id').decode()
             increase_hit_count(fid, 'qa', '')
 
+        log.info("[RDSFT] org={} {} {}".format(org_id, orgnum, qnaorg))
         similarity = 0.0
-        docs = myredis.ft_search(embedded_query=myquery, hybrid_fields=myredis.create_hybrid_field(str(orgnum), "category", "kb"))
+        docs = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(str(orgnum), "category", "kb"))
         if len(docs) == 0:
             log.info("[RDSFT] semantic search: None")
             return None, [], similarity
