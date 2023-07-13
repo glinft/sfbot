@@ -174,6 +174,10 @@ class HttpChannel(Channel):
         context['from_org_id'] = str(orgid)
         res = data.get("res", 0)
         context['res'] = str(res)
+        userflag = data.get("userflag", 'external')
+        context['userflag'] = str(userflag)
+        siteid = data.get("siteid", 0)
+        context['siteid'] = str(siteid)
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
             'channel': self, 'context': query,  "args": context}))
         reply = e_context['reply']

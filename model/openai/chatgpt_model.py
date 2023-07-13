@@ -81,13 +81,15 @@ class ChatGPTModel(Model):
             log.info("[CHATGPT] query={}".format(query))
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
+            from_site_id = context['siteid']
+            user_flag = context['userflag']
             res = int(context['res'])
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
             if query in clear_memory_commands:
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
-            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id)
+            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_site_id, user_flag)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
@@ -166,8 +168,10 @@ class ChatGPTModel(Model):
         try:
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
+            from_site_id = context['siteid']
+            user_flag = context['userflag']
             res = int(context['res'])
-            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id)
+            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_site_id, user_flag)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
@@ -263,7 +267,7 @@ class ChatGPTModel(Model):
 
 class Session(object):
     @staticmethod
-    def build_session_query(query, user_id, org_id):
+    def build_session_query(query, user_id, org_id, site_id='0', user_flag='external'):
         '''
         build query with conversation history
         e.g.  [
@@ -322,7 +326,7 @@ class Session(object):
         qna_output = None
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
         myredis = RedisSingleton()
-        qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field(qnaorg, "category", "qa"))
+        qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field2(qnaorg, site_id, user_flag, "category", "qa"))
         if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
             qna = qnas[0]
             log.info(f"Q/A: {qna.id} {qna.orgid} {qna.category} {qna.vector_score}")
@@ -334,7 +338,7 @@ class Session(object):
 
         log.info("[RDSFT] org={} {} {}".format(org_id, orgnum, qnaorg))
         similarity = 0.0
-        docs = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(str(orgnum), "category", "kb"))
+        docs = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field2(str(orgnum), site_id, user_flag, "category", "kb"))
         if len(docs) == 0:
             log.info("[RDSFT] semantic search: None")
             return None, [], similarity
