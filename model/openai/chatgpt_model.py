@@ -280,6 +280,7 @@ class Session(object):
         :param user_id: from user id
         :return: query content with conversaction
         '''
+        config_prompt = common_conf_val("input_prompt", "")
         session = user_session.get(user_id, [])
         if re.match(md5sum_pattern, user_id) and os.path.exists(f"{faiss_store_root}{user_id}"):
             faiss_store_path = f"{faiss_store_root}{user_id}"
@@ -301,7 +302,7 @@ class Session(object):
             system_prompt = 'You are a good assistant.'
             system_prompt += '\nReply \"Sorry, I have no ideas.\", If you don\'t know the answer or you are not sure, don\'t try to make it up.'
             system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
-            system_prompt += '\nPlease respond to customer inquiries based on the following context, which is separated by 3 backticks.'
+            system_prompt += '\n' + config_prompt
             system_prompt += '\nContext:\n```'
             for doc, score in docs:
                 log.info("[FAISS] {} {}".format(score, json.dumps(doc.metadata)))
@@ -325,7 +326,7 @@ class Session(object):
         hitdocs = []
         qna_output = None
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
-        myredis = RedisSingleton()
+        myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field2(qnaorg, site_id, user_flag, "category", "qa"))
         if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
             qna = qnas[0]
@@ -342,16 +343,17 @@ class Session(object):
         if len(docs) == 0:
             log.info("[RDSFT] semantic search: None")
             return None, [], similarity
+
         similarity = 1.0 - float(docs[0].vector_score)
-        threshold = model_conf(const.OPEN_AI).get("similarity_threshold", 0.7)
-        if len(docs) > 0 and similarity < float(threshold):
+        threshold = float(common_conf_val('similarity_threshold', 0.7))
+        if len(docs) > 0 and similarity < threshold:
             log.info(f"[RDSFT] semantic search: score:{similarity} < threshold:{threshold}")
             return None, [], similarity
-        # system_prompt = model_conf(const.OPEN_AI).get("character_desc", "")
+
         system_prompt = myredis.redis.hget('sfbot:'+org_id, 'character_desc').decode()
         system_prompt += '\nReply \"Sorry, I have no ideas.\", If you don\'t know the answer or you are not sure, don\'t try to make it up.'
         system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
-        system_prompt += '\nPlease respond to customer inquiries based on the following context, which is separated by 3 backticks.'
+        system_prompt += '\n' + config_prompt
         system_prompt += '\nContext:\n```'
         if qna_output is not None:
             system_prompt += '\n' + qna_output
@@ -455,7 +457,7 @@ class Session(object):
         orgnum = get_org_id(org_id)
         resorg = "(0|{})".format(orgnum)
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
-        myredis = RedisSingleton()
+        myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         ress = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(resorg, "category", "res"), k=5)
         if len(ress) == 0:
             return []

@@ -6,7 +6,7 @@ import time
 from flask import jsonify, request
 from common import const
 from common.redis import RedisSingleton
-from config import channel_conf
+from config import channel_conf, common_conf_val
 
 
 class Auth():
@@ -73,7 +73,7 @@ def authenticate(username, password):
     :param password: str
     :return: str|boolean
     """
-    myredis = RedisSingleton()
+    myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
     authPassword = myredis.redis.hget('sfbot:'+username, 'password')
     if authPassword is None:
         return False
@@ -101,7 +101,7 @@ def identify(request):
             if not isinstance(payload, str):
                 username = payload['data']['id']
                 password = payload['data']['password']
-                myredis = RedisSingleton()
+                myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
                 authPassword = myredis.redis.hget('sfbot:'+username, 'password')
                 if authPassword is None:
                     return False, None
