@@ -145,23 +145,27 @@ class ChatGPTModel(Model):
             log.warn(e)
             if retry_count < 1:
                 time.sleep(5)
-                log.warn("[CHATGPT] RateLimit exceed, 第{}次重试".format(retry_count+1))
+                log.warn("[CHATGPT] RateLimit exceed, retry {} attempts".format(retry_count+1))
                 return self.reply_text(query, user_id, org_id, similarity, retry_count+1)
             else:
-                return "提问太快啦，请休息一下再问我吧", None
+                return "You're asking too quickly, please take a break before asking me again.", None
         except openai.error.APIConnectionError as e:
             log.warn(e)
             log.warn("[CHATGPT] APIConnection failed")
-            return "我连接不到网络，请稍后重试", None
+            return "I can't connect to the service, please try again later.", None
         except openai.error.Timeout as e:
             log.warn(e)
             log.warn("[CHATGPT] Timeout")
-            return "我没有收到消息，请稍后重试", None
+            return "I haven't received the message, please try again later.", None
+        except openai.error.ServiceUnavailableError as e:
+            log.warn(e)
+            log.warn("[CHATGPT] Service Unavailable")
+            return "The server is overloaded or not ready yet.", None
         except Exception as e:
             # unknown exception
             log.exception(e)
             Session.clear_session(user_id)
-            return "请再问我一次吧", None
+            return "Oops, something wrong, please ask me again.", None
 
 
     async def reply_text_stream(self, query, context, retry_count=0):
@@ -223,23 +227,27 @@ class ChatGPTModel(Model):
             log.warn(e)
             if retry_count < 1:
                 time.sleep(5)
-                log.warn("[CHATGPT] RateLimit exceed, 第{}次重试".format(retry_count+1))
+                log.warn("[CHATGPT] RateLimit exceed, retry {} attempts".format(retry_count+1))
                 yield True, self.reply_text_stream(query, context, retry_count+1)
             else:
-                yield True, "提问太快啦，请休息一下再问我吧"
+                yield True, "You're asking too quickly, please take a break before asking me again."
         except openai.error.APIConnectionError as e:
             log.warn(e)
             log.warn("[CHATGPT] APIConnection failed")
-            yield True, "我连接不到网络，请稍后重试"
+            yield True, "I can't connect to the service, please try again later."
         except openai.error.Timeout as e:
             log.warn(e)
             log.warn("[CHATGPT] Timeout")
-            yield True, "我没有收到消息，请稍后重试"
+            yield True, "I haven't received the message, please try again later."
+        except openai.error.ServiceUnavailableError as e:
+            log.warn(e)
+            log.warn("[CHATGPT] Service Unavailable")
+            return "The server is overloaded or not ready yet.", None
         except Exception as e:
             # unknown exception
             log.exception(e)
             Session.clear_session(from_user_id)
-            yield True, "请再问我一次吧"
+            yield True, "Oops, something wrong, please ask me again."
 
     def create_img(self, query, retry_count=0):
         try:
@@ -256,10 +264,10 @@ class ChatGPTModel(Model):
             log.warn(e)
             if retry_count < 1:
                 time.sleep(5)
-                log.warn("[OPEN_AI] ImgCreate RateLimit exceed, 第{}次重试".format(retry_count+1))
+                log.warn("[OPEN_AI] ImgCreate RateLimit exceed, retry {} attempts".format(retry_count+1))
                 return self.create_img(query, retry_count+1)
             else:
-                return "提问太快啦，请休息一下再问我吧"
+                return "You're asking too quickly, please take a break before asking me again."
         except Exception as e:
             log.exception(e)
             return None
