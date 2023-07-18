@@ -242,7 +242,7 @@ class ChatGPTModel(Model):
         except openai.error.ServiceUnavailableError as e:
             log.warn(e)
             log.warn("[CHATGPT] Service Unavailable")
-            return "The server is overloaded or not ready yet.", None
+            yield True, "The server is overloaded or not ready yet."
         except Exception as e:
             # unknown exception
             log.exception(e)
