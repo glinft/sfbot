@@ -307,9 +307,10 @@ class Session(object):
             if len(docs) > 0 and similarity < 0.6:
                 log.info(f"[FAISS] semantic search: score:{similarity} < threshold:0.6")
                 return None, [], similarity
-            system_prompt = 'You are a good assistant.'
-            system_prompt += '\nReply \"Sorry, I have no ideas.\", If you don\'t know the answer or you are not sure, don\'t try to make it up.'
-            system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
+            system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
+            system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
+            system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
+            system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
             system_prompt += '\n' + config_prompt
             system_prompt += '\nContext:\n```'
             for doc, score in docs:
@@ -348,19 +349,21 @@ class Session(object):
         log.info("[RDSFT] org={} {} {}".format(org_id, orgnum, qnaorg))
         similarity = 0.0
         docs = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field2(str(orgnum), site_id, user_flag, "category", "kb"))
-        if len(docs) == 0:
+        if len(docs) == 0 and qna_output is None:
             log.info("[RDSFT] semantic search: None")
             return None, [], similarity
 
-        similarity = 1.0 - float(docs[0].vector_score)
-        threshold = float(common_conf_val('similarity_threshold', 0.7))
-        if len(docs) > 0 and similarity < threshold:
-            log.info(f"[RDSFT] semantic search: score:{similarity} < threshold:{threshold}")
-            return None, [], similarity
+        if len(docs) > 0:
+            similarity = 1.0 - float(docs[0].vector_score)
+            threshold = float(common_conf_val('similarity_threshold', 0.7))
+            if similarity < threshold and qna_output is None:
+                log.info(f"[RDSFT] semantic search: score:{similarity} < threshold:{threshold}")
+                return None, [], similarity
 
         system_prompt = myredis.redis.hget('sfbot:'+org_id, 'character_desc').decode()
-        system_prompt += '\nReply \"Sorry, I have no ideas.\", If you don\'t know the answer or you are not sure, don\'t try to make it up.'
-        system_prompt += '\nReply \"Sorry, can you describe more clearly?\", if you are unclear about customer inquiry.'
+        system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
+        system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
+        system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
         system_prompt += '\n' + config_prompt
         system_prompt += '\nContext:\n```'
         if qna_output is not None:
