@@ -176,8 +176,8 @@ class HttpChannel(Channel):
         context['res'] = str(res)
         userflag = data.get("userflag", 'external')
         context['userflag'] = str(userflag)
-        siteid = data.get("siteid", 0)
-        context['siteid'] = str(siteid)
+        chatbotid = data.get("chatbotid", 0)
+        context['chatbotid'] = str(chatbotid)
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
             'channel': self, 'context': query,  "args": context}))
         reply = e_context['reply']
