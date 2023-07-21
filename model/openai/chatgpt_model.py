@@ -14,6 +14,7 @@ import requests
 import base64
 import random
 import tiktoken
+from datetime import datetime
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 
@@ -469,6 +470,17 @@ class Session(object):
 
         if re.match(md5sum_pattern, user_id) and os.path.exists(f"{faiss_store_root}{user_id}"):
             return None
+
+        if used_tokens > 0:
+            myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+            now = datetime.now()
+            momkey = 'stat_'+now.strftime("%Y%m")
+            momqty = myredis.redis.hget('sfbot:'+org_id, momkey)
+            if momqty is None:
+                myredis.redis.hset('sfbot:'+org_id, momkey, 1)
+            else:
+                momqty = int(momqty.decode())
+                myredis.redis.hset('sfbot:'+org_id, momkey, momqty+1)
 
         gqlurl = 'http://127.0.0.1:5000/graphql'
         gqlfunc = 'createChatHistory'
