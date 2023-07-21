@@ -100,7 +100,7 @@ class ChatGPTModel(Model):
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                logid = Session.save_session(new_query, reply_content, from_user_id, from_org_id, 0, 0, 0, similarity)
+                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, 0, 0, 0, similarity)
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
                 reply_content+='\n```\n'
@@ -110,7 +110,7 @@ class ChatGPTModel(Model):
             #     # reply in stream
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
-            reply_content, logid = self.reply_text(new_query, from_user_id, from_org_id, similarity, temperature, 0)
+            reply_content, logid = self.reply_text(new_query, query, from_user_id, from_org_id, similarity, temperature, 0)
             resources = []
             if res > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
@@ -123,7 +123,7 @@ class ChatGPTModel(Model):
         elif context.get('type', None) == 'IMAGE_CREATE':
             return self.create_img(query, 0)
 
-    def reply_text(self, query, user_id, org_id, similarity, temperature, retry_count=0):
+    def reply_text(self, query, qtext, user_id, org_id, similarity, temperature, retry_count=0):
         try:
             try:
                 temperature = float(temperature)
@@ -148,7 +148,7 @@ class ChatGPTModel(Model):
             log.debug(response)
             log.info("[CHATGPT] usage={}", response['usage'])
             log.info("[CHATGPT] reply={}", reply_content)
-            logid = Session.save_session(query, reply_content, user_id, org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
+            logid = Session.save_session(qtext, reply_content, user_id, org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
             return reply_content, logid
         except openai.error.RateLimitError as e:
             # rate limit exception
@@ -156,7 +156,7 @@ class ChatGPTModel(Model):
             if retry_count < 1:
                 time.sleep(5)
                 log.warn("[CHATGPT] RateLimit exceed, retry {} attempts".format(retry_count+1))
-                return self.reply_text(query, user_id, org_id, similarity, temperature, retry_count+1)
+                return self.reply_text(query, qtext, user_id, org_id, similarity, temperature, retry_count+1)
             else:
                 return "You're asking too quickly, please take a break before asking me again.", None
         except openai.error.APIConnectionError as e:
@@ -195,7 +195,7 @@ class ChatGPTModel(Model):
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                logid = Session.save_session(new_query, reply_content, from_user_id, from_org_id, 0, 0, 0, similarity)
+                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, 0, 0, 0, similarity)
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
                 reply_content+='\n```\n'
@@ -486,7 +486,7 @@ class Session(object):
         gqlfunc = 'createChatHistory'
         headers = { "Content-Type": "application/json", }
         org_id = get_org_id(org_id)
-        question = base64.b64encode(session[-2]['content'].encode('utf-8')).decode('utf-8')
+        question = base64.b64encode(query.encode('utf-8')).decode('utf-8')
         answer = base64.b64encode(answer.encode('utf-8')).decode('utf-8')
         xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{org_id},question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
         # log.info("[HISTORY] request: {}".format(xquery))
