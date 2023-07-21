@@ -178,6 +178,10 @@ class HttpChannel(Channel):
         context['userflag'] = str(userflag)
         chatbotid = data.get("chatbotid", 0)
         context['chatbotid'] = str(chatbotid)
+        character_desc = data.get("character_desc", 'undef')
+        context['character_desc'] = str(character_desc)
+        temperature = data.get("temperature", 'undef')
+        context['temperature'] = str(temperature)
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
             'channel': self, 'context': query,  "args": context}))
         reply = e_context['reply']
@@ -190,19 +194,28 @@ class HttpChannel(Channel):
 
     async def handle_stream(self, data):
         context = dict()
+        query = data["msg"]
         id = data["id"]
         context['from_user_id'] = str(id)
         orgid = data["orgid"]
         context['from_org_id'] = str(orgid)
         res = data.get("res", 0)
         context['res'] = str(res)
+        userflag = data.get("userflag", 'external')
+        context['userflag'] = str(userflag)
+        chatbotid = data.get("chatbotid", 0)
+        context['chatbotid'] = str(chatbotid)
+        character_desc = data.get("character_desc", 'undef')
+        context['character_desc'] = str(character_desc)
+        temperature = data.get("temperature", 'undef')
+        context['temperature'] = str(temperature)
         context['stream'] = True
-        context['origin'] = data["msg"]
+        context['origin'] = query
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
-            'channel': self, 'context': data["msg"], 'reply': data["msg"], "args": context}))
+            'channel': self, 'context': query, 'reply': query, "args": context}))
         reply = e_context['reply']
         if not e_context.is_pass():
-            async for final, reply in super().build_reply_stream(data["msg"], context):
+            async for final, reply in super().build_reply_stream(query, context):
                 yield final, reply
         else:
             yield True, reply

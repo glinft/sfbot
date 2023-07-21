@@ -84,12 +84,14 @@ class ChatGPTModel(Model):
             from_chatbot_id = context['chatbotid']
             user_flag = context['userflag']
             res = int(context['res'])
+            character_desc = context['character_desc']
+            temperature = context['temperature']
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
             if query in clear_memory_commands:
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
-            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag)
+            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
@@ -107,7 +109,7 @@ class ChatGPTModel(Model):
             #     # reply in stream
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
-            reply_content, logid = self.reply_text(new_query, from_user_id, from_org_id, similarity, 0)
+            reply_content, logid = self.reply_text(new_query, from_user_id, from_org_id, similarity, temperature, 0)
             resources = []
             if res > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
@@ -120,12 +122,19 @@ class ChatGPTModel(Model):
         elif context.get('type', None) == 'IMAGE_CREATE':
             return self.create_img(query, 0)
 
-    def reply_text(self, query, user_id, org_id, similarity, retry_count=0):
+    def reply_text(self, query, user_id, org_id, similarity, temperature, retry_count=0):
         try:
+            try:
+                temperature = float(temperature)
+                if temperature < 0.0 or temperature > 1.0:
+                    raise ValueError()
+            except ValueError:
+                temperature = model_conf(const.OPEN_AI).get("temperature", 0.75)
+
             response = openai.ChatCompletion.create(
                 model= model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
                 messages=query,
-                temperature=model_conf(const.OPEN_AI).get("temperature", 0.75),  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
+                temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
                 #top_p=model_conf(const.OPEN_AI).get("top_p", 0.7),,  #候选词列表。0.7 意味着只考虑前70%候选词的标记，建议和temperature参数二选一使用
                 frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
@@ -146,7 +155,7 @@ class ChatGPTModel(Model):
             if retry_count < 1:
                 time.sleep(5)
                 log.warn("[CHATGPT] RateLimit exceed, retry {} attempts".format(retry_count+1))
-                return self.reply_text(query, user_id, org_id, similarity, retry_count+1)
+                return self.reply_text(query, user_id, org_id, similarity, temperature, retry_count+1)
             else:
                 return "You're asking too quickly, please take a break before asking me again.", None
         except openai.error.APIConnectionError as e:
@@ -175,7 +184,9 @@ class ChatGPTModel(Model):
             from_chatbot_id = context['chatbotid']
             user_flag = context['userflag']
             res = int(context['res'])
-            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag)
+            character_desc = context['character_desc']
+            temperature = context['temperature']
+            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
@@ -189,10 +200,17 @@ class ChatGPTModel(Model):
                 reply_content+='\n```\n'
                 yield True,reply_content
 
+            try:
+                temperature = float(temperature)
+                if temperature < 0.0 or temperature > 1.0:
+                    raise ValueError()
+            except ValueError:
+                temperature = model_conf(const.OPEN_AI).get("temperature", 0.75)
+
             res = openai.ChatCompletion.create(
                 model= model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
                 messages=new_query,
-                temperature=model_conf(const.OPEN_AI).get("temperature", 0.75),  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
+                temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
                 #top_p=model_conf(const.OPEN_AI).get("top_p", 0.7),,  #候选词列表。0.7 意味着只考虑前70%候选词的标记，建议和temperature参数二选一使用
                 frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
@@ -275,7 +293,7 @@ class ChatGPTModel(Model):
 
 class Session(object):
     @staticmethod
-    def build_session_query(query, user_id, org_id, chatbot_id='0', user_flag='external'):
+    def build_session_query(query, user_id, org_id, chatbot_id='0', user_flag='external', character_desc='undef'):
         '''
         build query with conversation history
         e.g.  [
@@ -308,6 +326,8 @@ class Session(object):
                 log.info(f"[FAISS] semantic search: score:{similarity} < threshold:0.6")
                 return None, [], similarity
             system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
+            if character_desc != 'undef' and len(character_desc) > 0:
+                system_prompt = character_desc 
             system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
             system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
             system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
@@ -360,7 +380,14 @@ class Session(object):
                 log.info(f"[RDSFT] semantic search: score:{similarity} < threshold:{threshold}")
                 return None, [], similarity
 
-        system_prompt = myredis.redis.hget('sfbot:'+org_id, 'character_desc').decode()
+        system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
+        org_char_desc = myredis.redis.hget('sfbot:'+org_id, 'character_desc')
+        if org_char_desc is not None:
+            org_char_desc = org_char_desc.decode()
+            if len(org_char_desc) > 0:
+                system_prompt = org_char_desc 
+        if character_desc != 'undef' and len(character_desc) > 0:
+            system_prompt = character_desc 
         system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
         system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
         system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
