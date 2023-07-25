@@ -370,16 +370,11 @@ class Session(object):
         log.info("[RDSFT] org={} {} {}".format(org_id, orgnum, qnaorg))
         similarity = 0.0
         docs = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field2(str(orgnum), chatbot_id, user_flag, "category", "kb"))
-        if len(docs) == 0 and qna_output is None:
-            log.info("[RDSFT] semantic search: None")
-            return None, [], similarity
-
         if len(docs) > 0:
             similarity = 1.0 - float(docs[0].vector_score)
             threshold = float(common_conf_val('similarity_threshold', 0.7))
-            if similarity < threshold and qna_output is None:
-                log.info(f"[RDSFT] semantic search: score:{similarity} < threshold:{threshold}")
-                return None, [], similarity
+            if similarity < threshold:
+                docs = []
 
         system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
         org_char_desc = myredis.redis.hget('sfbot:'+org_id, 'character_desc')
@@ -392,6 +387,18 @@ class Session(object):
         system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
         system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
         system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
+
+        if len(docs) == 0 and qna_output is None:
+            log.info("[CHATGPT] prompt(nodoc)={}".format(system_prompt))
+            if len(session) > 0 and session[0]['role'] == 'system':
+                session.pop(0)
+            system_item = {'role': 'system', 'content': system_prompt}
+            session.insert(0, system_item)
+            user_session[user_id] = session
+            user_item = {'role': 'user', 'content': query}
+            session.append(user_item)
+            return session, [], similarity
+
         system_prompt += '\n' + config_prompt
         system_prompt += '\nContext:\n```'
         if qna_output is not None:
