@@ -22,6 +22,12 @@ user_session = dict()
 md5sum_pattern = r'^[0-9a-f]{32}$'
 faiss_store_root= "/opt/faiss/"
 
+def get_org_bot(input_string):
+    parts = input_string.split(':')
+    org_part = ":".join(parts[:2])
+    bot_part = ":".join(parts[2:])
+    return org_part, bot_part
+
 def get_org_id(string):
     pattern = r'org:(\d+)'
     match = re.search(pattern, string)
@@ -29,6 +35,14 @@ def get_org_id(string):
     if match:
         orgid = int(match.group(1))
     return orgid
+
+def get_bot_id(string):
+    pattern = r'bot:(\d+)'
+    match = re.search(pattern, string)
+    botid = 0
+    if match:
+        botid = int(match.group(1))
+    return botid
 
 def get_unique_by_key(data, key):
     seen = set()
@@ -82,7 +96,7 @@ class ChatGPTModel(Model):
             log.info("[CHATGPT] query={}".format(query))
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
-            from_chatbot_id = context['chatbotid']
+            from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
             res = int(context['res'])
             character_desc = context['character_desc']
@@ -182,7 +196,7 @@ class ChatGPTModel(Model):
         try:
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
-            from_chatbot_id = context['chatbotid']
+            from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
             res = int(context['res'])
             character_desc = context['character_desc']
@@ -294,7 +308,7 @@ class ChatGPTModel(Model):
 
 class Session(object):
     @staticmethod
-    def build_session_query(query, user_id, org_id, chatbot_id='0', user_flag='external', character_desc='undef'):
+    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc='undef'):
         '''
         build query with conversation history
         e.g.  [
@@ -351,13 +365,14 @@ class Session(object):
             return session, [], similarity
 
         orgnum = get_org_id(org_id)
+        botnum = get_bot_id(chatbot_id)
         qnaorg = "(0|{})".format(orgnum)
         refurls = []
         hitdocs = []
         qna_output = None
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
-        qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field2(qnaorg, chatbot_id, user_flag, "category", "qa"))
+        qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field2(qnaorg, str(botnum), user_flag, "category", "qa"))
         if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
             qna = qnas[0]
             log.info(f"Q/A: {qna.id} {qna.orgid} {qna.category} {qna.vector_score}")
@@ -369,7 +384,7 @@ class Session(object):
 
         log.info("[RDSFT] org={} {} {}".format(org_id, orgnum, qnaorg))
         similarity = 0.0
-        docs = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field2(str(orgnum), chatbot_id, user_flag, "category", "kb"))
+        docs = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field2(str(orgnum), str(botnum), user_flag, "category", "kb"))
         if len(docs) > 0:
             similarity = 1.0 - float(docs[0].vector_score)
             threshold = float(common_conf_val('similarity_threshold', 0.7))
@@ -492,10 +507,10 @@ class Session(object):
         gqlurl = 'http://127.0.0.1:5000/graphql'
         gqlfunc = 'createChatHistory'
         headers = { "Content-Type": "application/json", }
-        org_id = get_org_id(org_id)
+        orgnum = get_org_id(org_id)
         question = base64.b64encode(query.encode('utf-8')).decode('utf-8')
         answer = base64.b64encode(answer.encode('utf-8')).decode('utf-8')
-        xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{org_id},question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
+        xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgnum},question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
         # log.info("[HISTORY] request: {}".format(xquery))
         gqldata = { "query": xquery, "variables": {}, }
         gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
