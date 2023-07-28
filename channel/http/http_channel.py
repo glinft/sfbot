@@ -93,12 +93,12 @@ def disconnect():
 def chat():
     flag, orgid = auth.identify(request)
     if (flag == False):
-        return
+        return {'error':'auth failed'}
     data = json.loads(request.data)
     if data:
         msg = data['msg']
         if not msg:
-            return
+            return {'error':'no msg'}
         data['orgid'] = orgid
         reply_text = HttpChannel().handle(data=data)
         extra={}

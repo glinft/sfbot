@@ -114,7 +114,7 @@ class ChatGPTModel(Model):
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, 0, 0, 0, similarity)
+                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity)
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
                 reply_content+='\n```\n'
@@ -124,7 +124,7 @@ class ChatGPTModel(Model):
             #     # reply in stream
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
-            reply_content, logid = self.reply_text(new_query, query, from_user_id, from_org_id, similarity, temperature, 0)
+            reply_content, logid = self.reply_text(new_query, query, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, 0)
             resources = []
             if res > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
@@ -137,7 +137,7 @@ class ChatGPTModel(Model):
         elif context.get('type', None) == 'IMAGE_CREATE':
             return self.create_img(query, 0)
 
-    def reply_text(self, query, qtext, user_id, org_id, similarity, temperature, retry_count=0):
+    def reply_text(self, query, qtext, user_id, org_id, chatbot_id, similarity, temperature, retry_count=0):
         try:
             try:
                 temperature = float(temperature)
@@ -162,7 +162,7 @@ class ChatGPTModel(Model):
             log.debug(response)
             log.info("[CHATGPT] usage={}", response['usage'])
             log.info("[CHATGPT] reply={}", reply_content)
-            logid = Session.save_session(qtext, reply_content, user_id, org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
+            logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity)
             return reply_content, logid
         except openai.error.RateLimitError as e:
             # rate limit exception
@@ -170,7 +170,7 @@ class ChatGPTModel(Model):
             if retry_count < 1:
                 time.sleep(5)
                 log.warn("[CHATGPT] RateLimit exceed, retry {} attempts".format(retry_count+1))
-                return self.reply_text(query, qtext, user_id, org_id, similarity, temperature, retry_count+1)
+                return self.reply_text(query, qtext, user_id, org_id, chatbot_id, similarity, temperature, retry_count+1)
             else:
                 return "You're asking too quickly, please take a break before asking me again.", None
         except openai.error.APIConnectionError as e:
@@ -209,7 +209,7 @@ class ChatGPTModel(Model):
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, 0, 0, 0, similarity)
+                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity)
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
                 reply_content+='\n```\n'
@@ -245,7 +245,7 @@ class ChatGPTModel(Model):
             prompt_tokens = num_tokens_from_messages(new_query)
             completion_tokens = num_tokens_from_string(full_response)
             used_tokens = prompt_tokens + completion_tokens
-            logid = Session.save_session(query, full_response, from_user_id, from_org_id, used_tokens, prompt_tokens, completion_tokens, similarity)
+            logid = Session.save_session(query, full_response, from_user_id, from_org_id, from_chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity)
             resources = []
             if res > 0:
                 resources = Session.get_resources(full_response, from_user_id, from_org_id)
@@ -468,7 +468,7 @@ class Session(object):
         return session, refurls, similarity
 
     @staticmethod
-    def save_session(query, answer, user_id, org_id, used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0):
+    def save_session(query, answer, user_id, org_id, chatbot_id, used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0):
         max_tokens = model_conf(const.OPEN_AI).get('conversation_max_tokens')
         max_history_num = model_conf(const.OPEN_AI).get('max_history_num', None)
         if not max_tokens or max_tokens > 4000:
@@ -495,19 +495,20 @@ class Session(object):
 
         if used_tokens > 0:
             myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
-            now = datetime.now()
-            momkey = 'stat_'+now.strftime("%Y%m")
-            momqty = myredis.redis.hget('sfbot:'+org_id, momkey)
+            botkey = 'sfbot:'+org_id+':'+chatbot_id
+            momkey = 'stat_'+datetime.now().strftime("%Y%m")
+            momqty = myredis.redis.hget(botkey, momkey)
             if momqty is None:
-                myredis.redis.hset('sfbot:'+org_id, momkey, 1)
+                myredis.redis.hset(botkey, momkey, 1)
             else:
                 momqty = int(momqty.decode())
-                myredis.redis.hset('sfbot:'+org_id, momkey, momqty+1)
+                myredis.redis.hset(botkey, momkey, momqty+1)
 
         gqlurl = 'http://127.0.0.1:5000/graphql'
         gqlfunc = 'createChatHistory'
         headers = { "Content-Type": "application/json", }
         orgnum = get_org_id(org_id)
+        botnum = get_bot_id(chatbot_id)
         question = base64.b64encode(query.encode('utf-8')).decode('utf-8')
         answer = base64.b64encode(answer.encode('utf-8')).decode('utf-8')
         xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgnum},question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
