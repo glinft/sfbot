@@ -511,7 +511,7 @@ class Session(object):
         botnum = get_bot_id(chatbot_id)
         question = base64.b64encode(query.encode('utf-8')).decode('utf-8')
         answer = base64.b64encode(answer.encode('utf-8')).decode('utf-8')
-        xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgnum},question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
+        xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgnum},sfbotId:{botnum},question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
         # log.info("[HISTORY] request: {}".format(xquery))
         gqldata = { "query": xquery, "variables": {}, }
         gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
