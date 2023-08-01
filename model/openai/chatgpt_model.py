@@ -17,6 +17,7 @@ import tiktoken
 from datetime import datetime
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
+from urllib.parse import urlparse, urlunparse
 
 user_session = dict()
 md5sum_pattern = r'^[0-9a-f]{32}$'
@@ -67,6 +68,21 @@ def num_tokens_from_messages(messages):
                 num_tokens += tokens_per_name
     num_tokens += 3
     return num_tokens
+
+def remove_url_query(url):
+    parsed_url = urlparse(url)
+    clean_url = urlunparse((parsed_url.scheme, parsed_url.netloc, parsed_url.path, '', '', ''))
+    return clean_url
+
+def is_image_url(url):
+    image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp']
+    lower_url = url.lower()
+    return any(lower_url.endswith(ext) for ext in image_extensions)
+
+def is_video_url(url):
+    video_extensions = ['.mp4', '.webm', '.ogv']
+    lower_url = url.lower()
+    return any(lower_url.endswith(ext) for ext in video_extensions)
 
 def increase_hit_count(fid, category, url=''):
     gqlurl = 'http://127.0.0.1:5000/graphql'
@@ -128,6 +144,8 @@ class ChatGPTModel(Model):
             resources = []
             if res > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
+
+            reply_content =insert_resource_to_reply(reply_content, from_user_id, from_org_id)
             reply_content+='\n```sf-json\n'
             reply_content+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
             reply_content+='\n```\n'
@@ -546,3 +564,53 @@ class Session(object):
                 resources.append({'url':resurl,'name':resnam,'score':vscore})
         resources = get_unique_by_key(resources, 'url')
         return resources
+
+    @staticmethod
+    def get_top_resource(query, user_id, org_id):
+        orgnum = get_org_id(org_id)
+        resorg = "(0|{})".format(orgnum)
+        myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
+        myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+        ress = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(resorg, "category", "res"), k=1)
+        if len(ress) == 0:
+            return None
+        res0 = ress[0]
+        if float(res0.vector_score) > 0.25:
+            return None
+        resurl = myredis.redis.hget(res0.id, 'url')
+        if resurl is None:
+            return None
+        resurl = resurl.decode()
+        resname = myredis.redis.hget(res0.id, 'title')
+        vscore = 1.0 - float(res0.vector_score)
+        if resname is not None:
+            resname = resname.decode()
+        urlnoq = remove_url_query(resurl)
+        restype = 'unknown'
+        if is_image_url(urlnoq):
+            restype = 'image'
+        elif is_video_url(urlnoq):
+            restype = 'video'
+        topres = {'url':resurl,'name':resname,'type':restype,'score':vscore}
+        return topres
+
+    @staticmethod
+    def insert_resource_to_reply(text, user_id, org_id):
+        paragraphs = text.split("\n\n")
+        for i, paragraph in enumerate(paragraphs):
+            if len(paragraph) < 50:
+                continue
+            resource = Session.get_top_resource(paragraph, user_id, org_id)
+            if resource is None:
+                continue
+            resurl = resource['url']
+            resname = resource['name']
+            restype = resource['type']
+            if restype == 'image':
+                imagetag = f"\n\n<img src=\"{resurl}\" alt=\"{resname}\" width=\"600\">\n\n"
+                paragraphs[i] = paragraphs[i] + imagetag
+            elif restype == 'video':
+                videotag = f"\n\n<video width=\"600\" controls><source src=\"{resurl}\" type=\"video/mp4\">Your browser does not support the video tag.</video>\n\n"
+                paragraphs[i] = paragraphs[i] + videotag
+        modified_text = "\n\n".join(paragraphs)
+        return modified_text
