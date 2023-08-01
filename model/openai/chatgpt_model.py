@@ -145,7 +145,7 @@ class ChatGPTModel(Model):
             if res > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
 
-            reply_content =insert_resource_to_reply(reply_content, from_user_id, from_org_id)
+            reply_content = Session.insert_resource_to_reply(reply_content, from_user_id, from_org_id)
             reply_content+='\n```sf-json\n'
             reply_content+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
             reply_content+='\n```\n'
