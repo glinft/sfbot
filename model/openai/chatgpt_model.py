@@ -617,10 +617,10 @@ class Session(object):
             resname = resource['name']
             restype = resource['type']
             if restype == 'image':
-                imagetag = f"\n\n<img src=\"{resurl}\" alt=\"{resname}\" width=\"600\">\n\n"
+                imagetag = f"\n\n<img src=\"{resurl}\" alt=\"{resname}\" width=\"600\">\n\n\n"
                 paragraphs[i] = paragraphs[i] + imagetag
             elif restype == 'video':
-                videotag = f"\n\n<video width=\"600\" controls><source src=\"{resurl}\" type=\"video/mp4\">Your browser does not support the video tag.</video>\n\n"
+                videotag = f"\n\n<video width=\"600\" controls><source src=\"{resurl}\" type=\"video/mp4\">Your browser does not support the video tag.</video>\n\n\n"
                 paragraphs[i] = paragraphs[i] + videotag
         modified_text = "\n\n".join(paragraphs)
         return modified_text
