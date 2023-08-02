@@ -29,13 +29,14 @@ class RedisSingleton:
         return_fields: list = ["id", "orgid", "category", "vector_score"],
         hybrid_fields: str = "*",
         k: int = 3,
+        offset: int = 0,
     ) -> List[dict]:
-        base_query = f'{hybrid_fields}=>[KNN {k} @{vector_field} $vector AS vector_score]'
+        base_query = f'{hybrid_fields}=>[KNN {k+offset} @{vector_field} $vector AS vector_score]'
         query = (
             Query(base_query)
                .return_fields(*return_fields)
                .sort_by("vector_score")
-               .paging(0, k)
+               .paging(offset, k)
                .dialect(2)
         )
         params_dict = {"vector": np.array(embedded_query).astype(dtype=np.float32).tobytes()}
