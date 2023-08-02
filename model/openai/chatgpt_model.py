@@ -144,8 +144,7 @@ class ChatGPTModel(Model):
             resources = []
             if res > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
-
-            reply_content = Session.insert_resource_to_reply(reply_content, from_user_id, from_org_id)
+                reply_content = Session.insert_resource_to_reply(reply_content, from_user_id, from_org_id)
             reply_content+='\n```sf-json\n'
             reply_content+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
             reply_content+='\n```\n'
@@ -566,12 +565,12 @@ class Session(object):
         return resources
 
     @staticmethod
-    def get_top_resource(query, user_id, org_id):
+    def get_top_resource(query, user_id, org_id, pos=0):
         orgnum = get_org_id(org_id)
         resorg = "(0|{})".format(orgnum)
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
-        ress = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(resorg, "category", "res"), k=1)
+        ress = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(resorg, "category", "res"), k=1, offset=pos)
         if len(ress) == 0:
             return None
         res0 = ress[0]
@@ -591,17 +590,28 @@ class Session(object):
             restype = 'image'
         elif is_video_url(urlnoq):
             restype = 'video'
-        topres = {'url':resurl,'name':resname,'type':restype,'score':vscore}
+        topres = {'rid':res0.id, 'url':resurl,'name':resname,'type':restype,'score':vscore}
         return topres
 
     @staticmethod
     def insert_resource_to_reply(text, user_id, org_id):
+        resrids=set()
         paragraphs = text.split("\n\n")
         for i, paragraph in enumerate(paragraphs):
             if len(paragraph) < 50:
                 continue
-            resource = Session.get_top_resource(paragraph, user_id, org_id)
-            if resource is None:
+            found = False
+            for j in range(10):
+                resource = Session.get_top_resource(paragraph, user_id, org_id, j)
+                if resource is None:
+                    found = False
+                    break
+                resrid = resource['rid']
+                if resrid not in resrids:
+                    found = True
+                    resrids.add(resrid)
+                    break
+            if not found:
                 continue
             resurl = resource['url']
             resname = resource['name']
