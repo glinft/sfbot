@@ -53,7 +53,7 @@ class DiscordChannel(Channel):
         self.bot.run(self.token)
 
     async def on_ready(self):
-        logger.info('Bot is online user:{}'.format(self.bot.user))
+        logger.info('Bot is online user:{}:{}'.format(self.bot.user,self.bot.user.id))
         if self.voice_enabled == False:
             logger.debug('disable music')
             await self.bot.remove_cog("Music")
@@ -150,6 +150,12 @@ class DiscordChannel(Channel):
                 markdown_message = "*Channel ID*: {}\n*Channel Title*: {}".format(channel.id, channelname)
             await message.channel.send(markdown_message)
             return
+
+        if not isinstance(channel, discord.channel.DMChannel):
+            mentionuser = "<@{}>".format(self.bot.user.id)
+            if mentionuser not in prompt:
+                return
+            prompt = prompt.replace(mentionuser, "")
 
         session_id = str(message.author)
         if self.discord_channel_session == 'thread' and isinstance(message.channel, discord.Thread):
