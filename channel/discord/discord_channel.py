@@ -6,10 +6,13 @@ Python discord - https://github.com/Rapptz/discord.py.git
 """
 from channel.channel import Channel
 from common.log import logger
+from common.redis import RedisSingleton
 from config import conf, common_conf_val, channel_conf
+import json
 import ssl
 import discord
 from discord.ext import commands
+from discord import app_commands
 
 class DiscordChannel(Channel):
 
@@ -18,6 +21,7 @@ class DiscordChannel(Channel):
 
         self.token = channel_conf('discord').get('app_token')
         self.discord_channel_name = channel_conf('discord').get('channel_name')
+        self.discord_channel_name = None
         self.discord_channel_session = channel_conf('discord').get('channel_session', 'author')
         self.voice_enabled = channel_conf('discord').get('voice_enabled', False)
         self.cmd_clear_session = common_conf_val('clear_memory_commands', ['#清除记忆'])[0]
@@ -94,7 +98,7 @@ class DiscordChannel(Channel):
         logger.debug('on_channel_create %s', repr(channel))
 
     async def on_thread_delete(self, thread):
-        print('on_thread_delete', thread)
+        logger.debug('on_thread_delete %s %s', thread.id, thread.parent.name)
         if self.discord_channel_session != 'thread' or thread.parent.name != self.discord_channel_name:
             logger.debug('skip on_thread_delete %s', thread.id)
             return
@@ -110,7 +114,7 @@ class DiscordChannel(Channel):
 
 
     async def on_thread_create(self, thread):
-        logger.debug('on_thread_create %s', thread.id)
+        logger.debug('on_thread_create %s %s', thread.id, thread.parent.name)
         if self.discord_channel_session != 'thread' or thread.parent.name != self.discord_channel_name:
             logger.debug('skip on_channel_create %s', repr(thread))
             return
@@ -128,16 +132,43 @@ class DiscordChannel(Channel):
         prompt = message.content.strip();
         logger.debug('author: %s', message.author)
         logger.debug('prompt: %s', prompt)
+        if prompt.lower() == '/help':
+            markdown_message = "Hi, I am a chatbot _powered by_ [Easiio](https://www.easiio.com/). What can I do for you?"
+            await message.channel.send(markdown_message)
+            return
+        elif prompt.lower() == '/getid':
+            author=message.author
+            channel=message.channel
+            guild=message.channel.guild
+            if isinstance(channel, discord.channel.DMChannel):
+                channelname="@"+author.name
+                markdown_message = "*User ID*: {}\n*Username*: {}".format(channel.id, channelname)
+            else:
+                channelname="#"+channel.name
+                if guild is not None:
+                    channelname=guild.name+" "+channelname
+                markdown_message = "*Channel ID*: {}\n*Channel Title*: {}".format(channel.id, channelname)
+            await message.channel.send(markdown_message)
+            return
 
-        session_id = message.author
+        session_id = str(message.author)
         if self.discord_channel_session == 'thread' and isinstance(message.channel, discord.Thread):
             logger.debug('on_message thread id %s', message.channel.id)
-            session_id = message.channel.id
+            session_id = str(message.channel.id)
 
-        await message.channel.send('...')
-        response = response = self.send_text(session_id, prompt)
+        dot3 = await message.channel.send('...')
+        response = self.send_text(session_id, prompt, message.channel)
+        await dot3.delete()
         await message.channel.send(response)
 
+    def dump_object(self, mo):
+        attributes = dir(mo)
+        for attr in attributes:
+            try:
+                value = getattr(mo, attr)
+                logger.info('##DC id:%s value:%s', attr, value)
+            except Exception as e:
+                logger.warn('##DC id:%s error:%s', attr, e)
 
     def check_message(self, message):
         if message.author == self.bot.user:
@@ -147,6 +178,27 @@ class DiscordChannel(Channel):
         if not prompt:
             logger.debug('no prompt author: %s', message.author)
             return False
+
+        #self.dump_object(message)
+        #self.dump_object(message.author)
+        #self.dump_object(message.channel)
+        author=message.author
+        channel=message.channel
+        guild=message.channel.guild
+        if isinstance(channel, discord.channel.DMChannel):
+            chattype="private"
+            channelname="@"+author.name
+        else:
+            chattype="channel"
+            channelname="#"+channel.name
+            if guild is not None:
+                channelname=guild.name+" "+channelname
+        logger.info('discord/config %s %s', self.discord_channel_session, self.discord_channel_name)
+        logger.info('discord/message (%s)%s %s', type(message), message.id, chattype)
+        logger.info('discord/channel (%s)%s %s %s', type(channel), channel.id, channelname, channel.type)
+
+        if isinstance(message.channel, discord.Thread):
+            logger.info('check_message/thread %s %s %s', message.channel.id, message.channel.parent.name, type(message.channel.parent))
 
         if self.discord_channel_name:
             if isinstance(message.channel, discord.Thread) and message.channel.parent.name == self.discord_channel_name:
@@ -159,9 +211,34 @@ class DiscordChannel(Channel):
         else:
             return True
 
-    def send_text(self, id, content):
+    def send_text(self, id, query, channel=None):
         context = dict()
         context['type'] = 'TEXT'
         context['from_user_id'] = id
-        context['content'] = content
-        return super().build_reply_content(content, context)
+        context['from_org_id'] = "org:4:bot:9"
+        if channel is not None:
+            chattype="channel"
+            if isinstance(channel, discord.channel.DMChannel):
+                chattype="private"
+            routekey="discord:"+chattype+":"+str(channel.id)
+            myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+            orgbot = myredis.redis.hget('sfbot:route', routekey)
+            if orgbot is not None:
+                context['from_org_id'] = orgbot.decode()
+        context['res'] = "0"
+        context['userflag'] = "external"
+        context['character_desc'] = "undef"
+        context['temperature'] = "undef"
+        context['content'] = query
+        reply_text = super().build_reply_content(query, context)
+        splits=reply_text.split("```sf-json")
+        if len(splits)==2:
+            extra=json.loads(splits[1][1:-4])
+            reply_text=splits[0]
+            pages=extra.get('pages',[])
+            if len(pages)>0:
+                reply_text+="\n"
+                for page in pages:
+                    reply_text+="\n[{}]({})".format(page['title'],page['url'])
+        logger.info('[Discord] reply content: {}'.format(reply_text))
+        return reply_text
