@@ -151,7 +151,7 @@ class DiscordChannel(Channel):
             await message.channel.send(markdown_message)
             return
 
-        if not isinstance(channel, discord.channel.DMChannel):
+        if not isinstance(message.channel, discord.channel.DMChannel):
             mentionuser = "<@{}>".format(self.bot.user.id)
             if mentionuser not in prompt:
                 return
