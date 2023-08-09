@@ -8,6 +8,7 @@ from flask import jsonify, request
 from common import const
 from common.redis import RedisSingleton
 from config import channel_conf, common_conf_val
+from common import log
 
 def calculate_md5(string):
     md5_hash = hashlib.md5()
@@ -37,7 +38,7 @@ class Auth():
                 'iat': datetime.datetime.utcnow(),
                 'data': {
                     'id': username,
-                    'password': calculate_md5(password.ljust(32, '#')),
+                    'hashcode': calculate_md5(password.ljust(32, '#')),
                     'login_time': login_time
                 }
             }
@@ -70,7 +71,6 @@ class Auth():
         except jwt.InvalidTokenError:
             return 'Invalid Token'
 
-
 def authenticate(username, password):
     """
     用户登录，登录成功返回token
@@ -79,16 +79,15 @@ def authenticate(username, password):
     :return: str|boolean
     """
     myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
-    authPassword = myredis.redis.hget('sfbot:'+username, 'password')
-    if authPassword is None:
+    credential = myredis.redis.hget('sfbot:'+username, 'password')
+    if credential is None:
         return False
-    elif (authPassword.decode() != password):
+    credential = credential.decode()
+    if (credential != password):
         return False
-    else:
-        login_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-        token = Auth.encode_auth_token(username, password, login_time)
-        return token
-
+    login_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    token = Auth.encode_auth_token(username, password, login_time)
+    return token
 
 def identify(request):
     """
@@ -101,26 +100,30 @@ def identify(request):
         authorization = request.cookies.get('Authorization')
         if not authorization:
             authorization = request.headers.get('Authorization')
-        if (authorization):
-            payload = Auth.decode_auth_token(authorization)
-            if not isinstance(payload, str):
-                username = payload['data']['id']
-                password = payload['data']['password']
-                myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
-                authPassword = myredis.redis.hget('sfbot:'+username, 'password')
-                if authPassword is None:
-                    return False, None
-                authPassword = authPassword.decode()
-                authPassword = calculate_md5(authPassword.ljust(32, '#')),
-                if (authPassword != password):
-                    return False, None
-                return True, username
-        return False, None
- 
-    except jwt.ExpiredSignatureError:
-        #result = 'Token已更改，请重新登录获取'
-        return False, None
- 
-    except jwt.InvalidTokenError:
-        #result = '没有提供认证token'
+        if not authorization:
+            log.info("auth:identify No Authorization")
+            return False, None
+        payload = Auth.decode_auth_token(authorization)
+        if isinstance(payload, str):
+            # jwt.ExpiredSignatureError 'Token Expired' 'Token已更改，请重新登录获取'
+            # jwt.InvalidTokenError     'Invalid Token' '没有提供认证Token'
+            result = payload
+            log.info(f"auth:identify Authorization({authorization}): {result}")
+            return False, None
+        username = payload['data']['id']
+        hashcode = payload['data']['hashcode']
+        myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+        credential = myredis.redis.hget('sfbot:'+username, 'password')
+        if credential is None:
+            log.info("auth:identify No Credential")
+            return False, None
+        credential = credential.decode()
+        rehash = calculate_md5(credential.ljust(32, '#'))
+        log.info(f"auth:identify {username}: {hashcode}/{rehash}")
+        if (rehash != hashcode):
+            log.info("auth:identify Invalid Hashcode")
+            return False, None
+        return True, username
+
+    except Exception as e:
         return False, None
