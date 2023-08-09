@@ -3,11 +3,16 @@
 import jwt
 import datetime
 import time
+import hashlib
 from flask import jsonify, request
 from common import const
 from common.redis import RedisSingleton
 from config import channel_conf, common_conf_val
 
+def calculate_md5(string):
+    md5_hash = hashlib.md5()
+    md5_hash.update(string.encode('utf-8'))
+    return md5_hash.hexdigest()
 
 class Auth():
     def __init__(self, login):
@@ -27,12 +32,12 @@ class Auth():
         """
         try:
             payload = {
-                'iss': 'ken',  # 签名
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(days=0, hours=10),  # 过期时间
-                'iat': datetime.datetime.utcnow(),  # 开始时间
+                'iss': 'easiiosflow',  # 签名
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(days=0, hours=10),
+                'iat': datetime.datetime.utcnow(),
                 'data': {
                     'id': username,
-                    'password': password,
+                    'password': calculate_md5(password.ljust(32, '#')),
                     'login_time': login_time
                 }
             }
@@ -40,7 +45,7 @@ class Auth():
                 payload,
                 channel_conf(const.HTTP).get('http_auth_secret_key'),
                 algorithm='HS256'
-            )  # 加密生成字符串
+            )
         except Exception as e:
             return e
 
@@ -105,10 +110,11 @@ def identify(request):
                 authPassword = myredis.redis.hget('sfbot:'+username, 'password')
                 if authPassword is None:
                     return False, None
-                elif (authPassword.decode() != password):
+                authPassword = authPassword.decode()
+                authPassword = calculate_md5(authPassword.ljust(32, '#')),
+                if (authPassword != password):
                     return False, None
-                else:
-                    return True, username
+                return True, username
         return False, None
  
     except jwt.ExpiredSignatureError:
