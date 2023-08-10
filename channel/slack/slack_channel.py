@@ -24,11 +24,21 @@ def log_request(payload, next):
     log.info(payload)
     return next()
 
+@app.event("app_home_opened")
+def handle_home_opened(event):
+    event_type = event["type"]
+    channel = event["channel"]
+    user = event["user"]
+    tab = event["tab"]
+    event_ts = event["event_ts"]
+    log.info(f"## Slack Event: {event_type}/{channel}/{user}/{tab}/{event_ts}")
+    pass
+
 @app.event("app_mention")
 def handle_mention(event, say):
+    event_type = event["type"]
     msg_id = event["client_msg_id"]
-    event_type = event["type"] # app_mention
-    log.info(f"## Slack Mention: {event_type}/{msg_id}")
+    log.info(f"## Slack Event: {event_type}/{msg_id}")
     pass
 
 @app.event("message")
