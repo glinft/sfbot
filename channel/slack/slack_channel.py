@@ -12,6 +12,7 @@ from config import common_conf_val, channel_conf
 from channel.channel import Channel
 from slack_bolt import App
 from slack_bolt.adapter.flask import SlackRequestHandler
+from slack_bolt.oauth.oauth_settings import OAuthSettings
 from slack_sdk.oauth import AuthorizeUrlGenerator
 from slack_sdk.oauth.installation_store import FileInstallationStore, Installation
 from slack_sdk.oauth.state_store import FileOAuthStateStore
@@ -19,6 +20,7 @@ from slack_sdk.web import WebClient
 
 client_id = channel_conf(const.SLACK).get('slack_client_id')
 client_secret = channel_conf(const.SLACK).get('slack_client_secret')
+signing_secret = channel_conf(const.SLACK).get('slack_signing_secret')
 state_store = FileOAuthStateStore(expiration_seconds=600, base_dir="/opt/boltstore/states")
 installation_store = FileInstallationStore(base_dir="/opt/boltstore/installations")
 authorize_url_generator = AuthorizeUrlGenerator(
@@ -27,9 +29,38 @@ authorize_url_generator = AuthorizeUrlGenerator(
     user_scopes=[],
 )
 
+"""
 app = App(
+    signing_secret=signing_secret,
     token=channel_conf(const.SLACK).get('slack_bot_token'),
-    signing_secret=channel_conf(const.SLACK).get('slack_signing_secret')
+)
+# Callback to run on successful installation
+def success(args: SuccessArgs) -> BoltResponse:
+    # Call default handler to return an HTTP response
+    return args.default.success(args)
+    # return BoltResponse(status=200, body="Installation successful!")
+
+
+# Callback to run on failed installation
+def failure(args: FailureArgs) -> BoltResponse:
+    return args.default.failure(args)
+    # return BoltResponse(status=args.suggested_status_code, body=args.reason)
+"""
+
+app = App(
+    signing_secret=signing_secret,
+    installation_store=installation_store,
+    oauth_settings=OAuthSettings(
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=["app_mentions:read", "channels:history", "channels:read", "chat:write", "commands", "files:write", "groups:history", "groups:read", "im:history", "im:read", "mpim:history", "mpim:read", "team.billing:read", "team:read", "users:read"],
+        user_scopes=[],
+        redirect_uri=None,
+        install_path="/slack/install",
+        redirect_uri_path="/slack/oauth_redirect",
+        state_store=state_store,
+        # callback_options=CallbackOptions(success=success, failure=failure),
+    ),
 )
 # authresp = app.client.auth_test()
 # bot_user_id = authresp["user_id"]
@@ -73,7 +104,7 @@ def handle_mention(event, say):
             for page in pages:
                 reply_text+="\n<{}|{}>".format(page['url'],page['title'])
     log.info('[Slack] reply content: {}'.format(reply_text))
-    say(text=f"{reply_text}", thread_ts=ts)
+    say(text=reply_text, thread_ts=ts)
 
 @app.event("message")
 def handle_message(event, say):
@@ -105,7 +136,7 @@ def handle_message(event, say):
             for page in pages:
                 reply_text+="\n<{}|{}>".format(page['url'],page['title'])
     log.info('[Slack] reply content: {}'.format(reply_text))
-    say(text=f"{reply_text}", thread_ts=ts)
+    say(text=reply_text, thread_ts=ts)
 
 @app.command("/help")
 def handle_help(ack, respond, command):
