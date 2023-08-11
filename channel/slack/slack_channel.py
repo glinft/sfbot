@@ -31,8 +31,8 @@ app = App(
     token=channel_conf(const.SLACK).get('slack_bot_token'),
     signing_secret=channel_conf(const.SLACK).get('slack_signing_secret')
 )
-authresp = app.client.auth_test()
-bot_user_id = authresp["user_id"]
+# authresp = app.client.auth_test()
+# bot_user_id = authresp["user_id"]
 
 @app.middleware
 def log_request(payload, next):
@@ -52,30 +52,46 @@ def handle_home_opened(event):
 @app.event("app_mention")
 def handle_mention(event, say):
     event_type = event["type"]
-    msg_id = event.get("client_msg_id",'n/a')
+    msg_id = event.get("client_msg_id","n/a")
     log.info(f"## Slack Event: {event_type}/{msg_id}")
-    pass
+    event_ts = event["event_ts"]
+    ts = event["ts"]
+    if 'thread_ts' in event:
+        ts = event["thread_ts"]
+    channel = event["channel"]
+    team = event.get("team","n/a")
+    user = event["user"]
+    text = event["text"]
+    reply_text = SlackChannel().handle(event)
+    splits=reply_text.split("```sf-json")
+    if len(splits)==2:
+        extra=json.loads(splits[1][1:-4])
+        reply_text=splits[0]
+        pages=extra.get('pages',[])
+        if len(pages)>0:
+            reply_text+="\n"
+            for page in pages:
+                reply_text+="\n<{}|{}>".format(page['url'],page['title'])
+    log.info('[Slack] reply content: {}'.format(reply_text))
+    say(text=f"{reply_text}", thread_ts=ts)
 
 @app.event("message")
 def handle_message(event, say):
     event_type = event["type"]
-    msg_id = event.get("client_msg_id",'n/a')
+    msg_id = event.get("client_msg_id","n/a")
     log.info(f"## Slack Message: {event_type}/{msg_id}")
     event_ts = event["event_ts"]
     ts = event["ts"]
     if 'thread_ts' in event:
         ts = event["thread_ts"]
-    channel_type = event["channel_type"] # im/channel
+    channel_type = event.get("channel_type","n/a") # im/channel
     channel = event["channel"]
-    team = event.get("team",'n/a')
+    team = event.get("team","n/a")
     user = event["user"]
     text = event["text"]
     if channel_type=="im":
         channel_type = "private"
-    elif channel_type=="channel":
-        mentionuser = "<@{}>".format(bot_user_id)
-        if mentionuser not in text:
-            return
+    # elif channel_type=="channel": mentionuser = "<@{}>".format(bot_user_id) if mentionuser not in text: return
     else:
         return
     reply_text = SlackChannel().handle(event)
@@ -213,7 +229,9 @@ class SlackChannel(Channel):
     def handle(self, event):
         context = dict()
         channel = event["channel"]
-        channel_type = event["channel_type"]
+        channel_type = event.get("channel_type","channel")
+        if channel_type=="channel" and channel[0]=='D':
+            channel_type="im"
         user = event["user"]
         text = event["text"]
         context['from_user_id'] = "{}:{}".format(channel,user)
