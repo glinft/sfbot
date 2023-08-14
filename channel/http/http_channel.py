@@ -124,6 +124,8 @@ def handle_sms():
         mfr = data['from']
         if not mfr:
             return {'error':'no originator'}
+        data['msg'] = str(msg)
+        data['message'] = None
         data['id'] = str(mfr)
         data['orgid'] = orgid
         data['res'] = '0'
@@ -195,7 +197,7 @@ class HttpChannel(Channel):
 
     def handle(self, data):
         context = dict()
-        query = data["msg"] or data["message"]
+        query = data["msg"]
         id = data["id"]
         context['from_user_id'] = str(id)
         orgid = data["orgid"]
