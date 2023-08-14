@@ -127,3 +127,38 @@ def identify(request):
 
     except Exception as e:
         return False, None
+
+def check_apikey(request):
+    """
+    KEY鉴权
+    :return: boolean,str
+    """
+    try:
+        if (request is None):
+            return False, None
+        sfkey = request.headers.get('X-SF-KEY')
+        if not sfkey:
+            log.info("auth:check_apikey No SfKey")
+            return False, None
+        keyval = common_conf_val('sflow_apikey', 'Sflow!')
+        if (sfkey != keyval):
+            log.info("auth:check_apikey Bad SfKey")
+            return False, None
+        data = json.loads(request.data)
+        if not data:
+            log.info("auth:check_apikey Parse Failed")
+            return True, None
+        mto = data['to']
+        if not mto:
+            log.info("auth:check_apikey No Recipient")
+            return True, None
+        routekey="sms:to:"+mto
+        myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+        orgbot = myredis.redis.hget('sfbot:route', routekey)
+        if (orgbot is None):
+            log.info("auth:check_apikey No Bot-Route")
+            return True, None
+        return True, orgbot.decode()
+
+    except Exception as e:
+        return False, None

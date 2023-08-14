@@ -7,8 +7,7 @@ from flask import Flask, request, render_template, make_response
 from datetime import timedelta
 from common import const
 from common import functions
-from config import channel_conf
-from config import channel_conf_val
+from config import channel_conf, channel_conf_val
 from channel.channel import Channel
 from flask_socketio import SocketIO
 from flask_cors import CORS
@@ -107,6 +106,34 @@ def chat():
             extra=json.loads(splits[1][1:-4])
             reply_text=splits[0]
         return {'result': reply_text, 'pages': extra.get('pages',[]), 'resources': extra.get('resources',[]), 'logid': extra.get('logid',None)}
+
+
+@http_app.route("/sfbot/sms", methods=['POST'])
+def handle_sms():
+    flag, orgid = auth.check_apikey(request)
+    if (flag == False):
+        return {'error':'auth failed'}
+    if not orgid:
+        return {'error':'no chatbot setting'}
+    data = json.loads(request.data)
+    if data:
+        msg = data['msg']
+        if not msg:
+            return {'error':'no message'}
+        mfr = data['from']
+        if not mfr:
+            return {'error':'no originator'}
+        data['id'] = str(mfr)
+        data['orgid'] = orgid
+        data['res'] = '0'
+        data['userflag'] = 'external'
+        data['character_desc'] = 'undef'
+        data['temperature'] = 'undef'
+        reply_text = HttpChannel().handle(data=data)
+        splits=reply_text.split("```sf-json")
+        if len(splits)==2:
+            reply_text=splits[0]
+        return {'result': reply_text}
 
 
 @http_app.route("/sfbot", methods=['GET'])
