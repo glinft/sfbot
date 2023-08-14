@@ -115,7 +115,7 @@ def handle_sms():
         return {'error':'auth failed'}
     if not orgid:
         return {'error':'no chatbot setting'}
-    log.info('SMS:', request.data)
+    log.info('SMS: '+request.data)
     data = json.loads(request.data)
     if data:
         msg = data['message']
