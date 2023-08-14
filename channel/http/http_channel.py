@@ -97,7 +97,7 @@ def chat():
     if data:
         msg = data['msg']
         if not msg:
-            return {'error':'no msg'}
+            return {'error':'no message'}
         data['orgid'] = orgid
         reply_text = HttpChannel().handle(data=data)
         extra={}
@@ -115,9 +115,10 @@ def handle_sms():
         return {'error':'auth failed'}
     if not orgid:
         return {'error':'no chatbot setting'}
+    log.info('SMS:', request.data)
     data = json.loads(request.data)
     if data:
-        msg = data['msg']
+        msg = data['message']
         if not msg:
             return {'error':'no message'}
         mfr = data['from']
@@ -194,7 +195,7 @@ class HttpChannel(Channel):
 
     def handle(self, data):
         context = dict()
-        query = data["msg"]
+        query = data["msg"] or data["message"]
         id = data["id"]
         context['from_user_id'] = str(id)
         orgid = data["orgid"]
