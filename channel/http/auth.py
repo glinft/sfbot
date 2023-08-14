@@ -4,6 +4,7 @@ import jwt
 import datetime
 import time
 import hashlib
+import json
 from flask import jsonify, request
 from common import const
 from common.redis import RedisSingleton
@@ -161,4 +162,5 @@ def check_apikey(request):
         return True, orgbot.decode()
 
     except Exception as e:
+        log.info("auth:check_apikey "+str(e))
         return False, None
