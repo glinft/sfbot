@@ -153,7 +153,7 @@ def check_apikey(request):
         if not mto:
             log.info("auth:check_apikey No Recipient")
             return True, None
-        routekey="sms:to:"+mto
+        routekey="sms:private:"+mto
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         orgbot = myredis.redis.hget('sfbot:route', routekey)
         if (orgbot is None):
