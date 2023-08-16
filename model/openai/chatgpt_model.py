@@ -114,7 +114,8 @@ class ChatGPTModel(Model):
             from_org_id = context['from_org_id']
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
-            res = int(context['res'])
+            res = int(context.get('res','0'))
+            fwd = int(context.get('fwd','0'))
             character_id = context.get('character_id')
             character_desc = context['character_desc']
             temperature = context['temperature']
@@ -123,7 +124,7 @@ class ChatGPTModel(Model):
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
-            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id)
+            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, fwd)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
@@ -216,11 +217,12 @@ class ChatGPTModel(Model):
             from_org_id = context['from_org_id']
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
-            res = int(context['res'])
+            res = int(context.get('res','0'))
+            fwd = int(context.get('fwd','0'))
             character_id = context.get('character_id')
             character_desc = context['character_desc']
             temperature = context['temperature']
-            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id)
+            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, fwd)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
@@ -327,7 +329,7 @@ class ChatGPTModel(Model):
 
 class Session(object):
     @staticmethod
-    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc=None, character_id=None):
+    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc=None, character_id=None, fwd=0):
         '''
         build query with conversation history
         e.g.  [
@@ -424,6 +426,18 @@ class Session(object):
                 system_prompt = org_char_desc
         if isinstance(character_desc, str) and character_desc != 'undef' and len(character_desc) > 0:
             system_prompt = character_desc
+
+        if fwd > 0:
+            log.info("[CHATGPT] prompt(onlyfwd)={}".format(system_prompt))
+            if len(session) > 0 and session[0]['role'] == 'system':
+                session.pop(0)
+            system_item = {'role': 'system', 'content': system_prompt}
+            session.insert(0, system_item)
+            user_session[user_id] = session
+            user_item = {'role': 'user', 'content': query}
+            session.append(user_item)
+            return session, [], similarity
+
         system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
         system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
         system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
