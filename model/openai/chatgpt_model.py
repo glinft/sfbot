@@ -344,7 +344,7 @@ class Session(object):
             faiss_store_path = f"{faiss_store_root}{user_id}"
             mykey = model_conf(const.OPEN_AI).get('api_key')
             embeddings = OpenAIEmbeddings(openai_api_key=mykey)
-            log.info("[FAISS] try to load local store")
+            log.info("[FAISS] try to load local store {}".format(user_id))
             dbx = FAISS.load_local(faiss_store_path, embeddings)
             log.info("[FAISS] local store loaded")
             similarity = 0.0
@@ -361,7 +361,7 @@ class Session(object):
             '''
             system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
             if character_desc != 'undef' and len(character_desc) > 0:
-                system_prompt = character_desc 
+                system_prompt = character_desc
             system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
             system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
             system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
@@ -417,9 +417,9 @@ class Session(object):
         if org_char_desc is not None:
             org_char_desc = org_char_desc.decode()
             if len(org_char_desc) > 0:
-                system_prompt = org_char_desc 
+                system_prompt = org_char_desc
         if character_desc != 'undef' and len(character_desc) > 0:
-            system_prompt = character_desc 
+            system_prompt = character_desc
         system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
         system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
         system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
