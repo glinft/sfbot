@@ -354,9 +354,11 @@ class Session(object):
                 log.info("[FAISS] semantic search: None")
                 return None, [], similarity
             similarity = float(docs[0][1])
+            '''
             if len(docs) > 0 and similarity < 0.6:
                 log.info(f"[FAISS] semantic search: score:{similarity} < threshold:0.6")
                 return None, [], similarity
+            '''
             system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
             if character_desc != 'undef' and len(character_desc) > 0:
                 system_prompt = character_desc 
@@ -367,8 +369,10 @@ class Session(object):
             system_prompt += '\nContext:\n```'
             for doc, score in docs:
                 log.info("[FAISS] {} {}".format(score, json.dumps(doc.metadata)))
+                '''
                 if score < 0.6:
                     break
+                '''
                 system_prompt += '\n' + doc.page_content
             system_prompt += '\n```\n'
             log.info("[FAISS] prompt={}".format(system_prompt))
