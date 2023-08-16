@@ -206,6 +206,9 @@ class HttpChannel(Channel):
         context['res'] = str(res)
         userflag = data.get("userflag", 'external')
         context['userflag'] = str(userflag)
+        character_id = data.get("character_id")
+        if character_id is not None:
+            context['character_id'] = 'c'+str(character_id)
         character_desc = data.get("character_desc", 'undef')
         context['character_desc'] = str(character_desc)
         temperature = data.get("temperature", 'undef')
@@ -231,6 +234,9 @@ class HttpChannel(Channel):
         context['res'] = str(res)
         userflag = data.get("userflag", 'external')
         context['userflag'] = str(userflag)
+        character_id = data.get("character_id")
+        if character_id is not None:
+            context['character_id'] = 'c'+str(character_id)
         character_desc = data.get("character_desc", 'undef')
         context['character_desc'] = str(character_desc)
         temperature = data.get("temperature", 'undef')

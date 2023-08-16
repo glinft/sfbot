@@ -115,6 +115,7 @@ class ChatGPTModel(Model):
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
             res = int(context['res'])
+            character_id = context.get('character_id')
             character_desc = context['character_desc']
             temperature = context['temperature']
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
@@ -122,7 +123,7 @@ class ChatGPTModel(Model):
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
-            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc)
+            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
@@ -216,9 +217,10 @@ class ChatGPTModel(Model):
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
             res = int(context['res'])
+            character_id = context.get('character_id')
             character_desc = context['character_desc']
             temperature = context['temperature']
-            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc)
+            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
@@ -325,7 +327,7 @@ class ChatGPTModel(Model):
 
 class Session(object):
     @staticmethod
-    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc='undef'):
+    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc=None, character_id=None):
         '''
         build query with conversation history
         e.g.  [
@@ -360,7 +362,7 @@ class Session(object):
                 return None, [], similarity
             '''
             system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
-            if character_desc != 'undef' and len(character_desc) > 0:
+            if isinstance(character_desc, str) and character_desc != 'undef' and len(character_desc) > 0:
                 system_prompt = character_desc
             system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
             system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
@@ -388,6 +390,8 @@ class Session(object):
         orgnum = get_org_id(org_id)
         botnum = get_bot_id(chatbot_id)
         qnaorg = "(0|{})".format(orgnum)
+        if isinstance(character_id, str) and character_id[0] == 'c':
+            botnum += " | {}".format(character_id)
         refurls = []
         hitdocs = []
         qna_output = None
@@ -418,7 +422,7 @@ class Session(object):
             org_char_desc = org_char_desc.decode()
             if len(org_char_desc) > 0:
                 system_prompt = org_char_desc
-        if character_desc != 'undef' and len(character_desc) > 0:
+        if isinstance(character_desc, str) and character_desc != 'undef' and len(character_desc) > 0:
             system_prompt = character_desc
         system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
         system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
