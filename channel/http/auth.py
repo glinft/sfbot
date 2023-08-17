@@ -171,7 +171,7 @@ def check_apikey(request):
             log.info("auth:check_apikey No @botname")
             return True, None
         botname = msg[1:pos]
-        routekey="sms:botname:"+botname
+        routekey="sms:channel:"+botname
         orgbot = myredis.redis.hget('sfbot:route', routekey)
         if (orgbot is None):
             log.info("auth:check_apikey No Bot-Route")
