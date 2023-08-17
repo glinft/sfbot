@@ -162,16 +162,16 @@ def check_apikey(request):
         if not msg:
             log.info("auth:check_apikey No SMS Text")
             return True, None
+        botname = "easiiochatai"
         msg = msg.strip()
         if msg[0] != '@':
             log.info("auth:check_apikey No @botname")
-            return True, None
+            return True, botname
         pos = msg.find(' ')
         if pos == -1:
-            log.info("auth:check_apikey No @botname")
-            return True, None
+            botname = msg[1:]
         botname = msg[1:pos]
-        routekey="sms:channel:"+botname
+        routekey="sms:channel:"+botname.lower()
         orgbot = myredis.redis.hget('sfbot:route', routekey)
         if (orgbot is None):
             log.info("auth:check_apikey No Bot-Route")
