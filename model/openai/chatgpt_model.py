@@ -363,7 +363,7 @@ class Session(object):
                 log.info(f"[FAISS] semantic search: score:{similarity} < threshold:0.6")
                 return None, [], similarity
             '''
-            system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
+            system_prompt = 'Use the following pieces of context to answer the customer inquiry.'
             if isinstance(character_desc, str) and character_desc != 'undef' and len(character_desc) > 0:
                 system_prompt = character_desc
             system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
@@ -382,6 +382,7 @@ class Session(object):
             log.info("[FAISS] prompt={}".format(system_prompt))
             if len(session) > 0 and session[0]['role'] == 'system':
                 session.pop(0)
+            session = []
             system_item = {'role': 'system', 'content': system_prompt}
             session.insert(0, system_item)
             user_session[user_id] = session
