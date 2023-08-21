@@ -215,6 +215,7 @@ class ChatGPTModel(Model):
 
     async def reply_text_stream(self, query, context, retry_count=0):
         try:
+            log.info("[CHATGPT] query={}".format(query))
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
