@@ -24,10 +24,11 @@ class WordFilter:
         syncat=self.sync_time.get(orgkey,0)
         if self.words_data.get(orgkey) is None or current-syncat>60:
             self.words_data[orgkey]={}
+            wfkey=f"word:filter:{orgkey}"
             myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
             myredis.redis.select(2)
-            wfkey=f"word:filter:{orgkey}"
             wfdata=myredis.redis.hgetall(wfkey)
+            myredis.redis.select(0)
             for wfkey,wfval in wfdata.items():
                 self.words_data[orgkey][wfkey.decode().lower()]=wfval.decode()
             self.sync_time[orgkey]=current
