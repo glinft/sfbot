@@ -80,6 +80,7 @@ def authenticate(username, password):
     :return: str|boolean
     """
     myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+    myredis.redis.select(0)
     credential = myredis.redis.hget('sfbot:'+username, 'password')
     if credential is None:
         return False
@@ -114,6 +115,7 @@ def identify(request):
         username = payload['data']['id']
         hashcode = payload['data']['hashcode']
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+        myredis.redis.select(0)
         credential = myredis.redis.hget('sfbot:'+username, 'password')
         if credential is None:
             log.info("auth:identify No Credential")
@@ -154,6 +156,7 @@ def check_apikey(request):
             log.info("auth:check_apikey No Recipient")
             return True, None
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+        myredis.redis.select(0)
         routekey="sms:private:"+mto
         orgbot = myredis.redis.hget('sfbot:route', routekey)
         if (orgbot is not None):
