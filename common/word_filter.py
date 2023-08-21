@@ -47,7 +47,6 @@ class WordFilter:
             stidx = edidx - len(word) + 1
             if (stidx==0 or isnotad(text[stidx-1])) and (edidx==len(text)-1 or isnotad(text[edidx+1])):
                 matches.append((stidx, edidx))
-        print(matches)
         if len(matches)==0:
             return text
         offset = 0
