@@ -122,6 +122,7 @@ class ChatGPTModel(Model):
             temperature = context['temperature']
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
             if query in clear_memory_commands:
+                log.info('[CHATGPT] reset session: {}'.format(from_user_id))
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 

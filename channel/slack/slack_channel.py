@@ -10,6 +10,7 @@ from common import log
 from common.redis import RedisSingleton
 from config import common_conf_val, channel_conf
 from channel.channel import Channel
+from model.openai.chatgpt_model import Session
 from slack_bolt import App
 from slack_bolt.adapter.flask import SlackRequestHandler
 from slack_bolt.oauth.oauth_settings import OAuthSettings
@@ -147,6 +148,11 @@ def handle_help(ack, respond, command):
 @app.command("/reset")
 def handle_reset(ack, respond, command):
     ack()
+    channel = command["channel_id"]
+    user = command["user_id"]
+    from_user_id = "{}:{}".format(channel,user)
+    Session.clear_session(from_user_id)
+    log.info('[Slack] reset session: {}'.format(from_user_id))
     markdown_message = "*Conversation history forgotten.*"
     respond(markdown_message)
 
