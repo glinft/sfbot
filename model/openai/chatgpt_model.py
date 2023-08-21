@@ -5,6 +5,7 @@ from config import model_conf, common_conf_val
 from common import const
 from common import log
 from common.redis import RedisSingleton
+from common.word_filter import WordFilter
 import openai
 import os
 import time
@@ -267,11 +268,19 @@ class ChatGPTModel(Model):
             completion_tokens = num_tokens_from_string(full_response)
             used_tokens = prompt_tokens + completion_tokens
             logid = Session.save_session(query, full_response, from_user_id, from_org_id, from_chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity)
+
             resources = []
             if res > 0:
                 resources = Session.get_resources(full_response, from_user_id, from_org_id)
+
+            wftool = WordFilter()
+            wfdict,_ = wftool.load_words(0)
+            wfdict_org,_ = wftool.load_words(get_org_id(from_org_id))
+            wfdict.update(wfdict_org)
+            full_response = wftool.replace_sensitive_words(full_response, wfdict)
+
             full_response+='\n```sf-json\n'
-            reply_content+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
+            full_response+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
             full_response+='\n```\n'
             #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, full_response))
             yield True,full_response
