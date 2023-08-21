@@ -115,7 +115,7 @@ class ChatGPTModel(Model):
             from_org_id = context['from_org_id']
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
-            res = int(context.get('res','0'))
+            nres = int(context.get('res','0'))
             fwd = int(context.get('fwd','0'))
             character_id = context.get('character_id')
             character_desc = context['character_desc']
@@ -146,7 +146,7 @@ class ChatGPTModel(Model):
 
             reply_content, logid = self.reply_text(new_query, query, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, 0)
             resources = []
-            if res > 0:
+            if nres > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
                 reply_content = Session.insert_resource_to_reply(reply_content, from_user_id, from_org_id)
             reply_content+='\n```sf-json\n'
@@ -219,7 +219,7 @@ class ChatGPTModel(Model):
             from_org_id = context['from_org_id']
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
-            res = int(context.get('res','0'))
+            nres = int(context.get('res','0'))
             fwd = int(context.get('fwd','0'))
             character_id = context.get('character_id')
             character_desc = context['character_desc']
@@ -271,7 +271,7 @@ class ChatGPTModel(Model):
             logid = Session.save_session(query, full_response, from_user_id, from_org_id, from_chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity)
 
             resources = []
-            if res > 0:
+            if nres > 0:
                 resources = Session.get_resources(full_response, from_user_id, from_org_id)
 
             wftool = WordFilter()
