@@ -95,7 +95,7 @@ def chat():
         return {'error':'auth failed'}
     data = json.loads(request.data)
     if data:
-        msg = data['msg']
+        msg = data.get("msg")
         if not msg:
             return {'error':'no message'}
         data['orgid'] = orgid
@@ -118,10 +118,10 @@ def handle_sms():
     log.info('SMS: '+request.data.decode('utf-8'))
     data = json.loads(request.data)
     if data:
-        msg = data['message']
+        msg = data.get("message")
         if not msg:
             return {'error':'no message'}
-        mfr = data['from']
+        mfr = data.get("from")
         if not mfr:
             return {'error':'no originator'}
         data['msg'] = str(msg)
