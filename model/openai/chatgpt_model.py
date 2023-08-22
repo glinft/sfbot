@@ -95,6 +95,15 @@ def increase_hit_count(fid, category, url=''):
     log.info(f"GQL/{gqlfunc}: {category}:{fid} {gqlresp.status_code} {query}")
     log.debug(f"GQL/{gqlfunc}: {category}:{fid} {gqlresp.json()}")
 
+def run_word_filter(text, org_id):
+    wftool = WordFilter()
+    wfdict,_ = wftool.load_words(0)
+    if int(org_id)>0:
+        wfdict_org,_ = wftool.load_words(org_id)
+        wfdict.update(wfdict_org)
+    filted_text = wftool.replace_sensitive_words(text, wfdict)
+    return filted_text
+
 # OpenAI对话模型API (可用)
 class ChatGPTModel(Model):
     def __init__(self):
@@ -135,6 +144,7 @@ class ChatGPTModel(Model):
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
                 logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity)
+                reply_content = run_word_filter(reply_content, get_org_id(from_org_id)):
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
                 reply_content+='\n```\n'
@@ -149,6 +159,7 @@ class ChatGPTModel(Model):
             if nres > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
                 reply_content = Session.insert_resource_to_reply(reply_content, from_user_id, from_org_id)
+            reply_content = run_word_filter(reply_content, get_org_id(from_org_id)):
             reply_content+='\n```sf-json\n'
             reply_content+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
             reply_content+='\n```\n'
@@ -234,6 +245,7 @@ class ChatGPTModel(Model):
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
                 logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity)
+                reply_content = run_word_filter(reply_content, get_org_id(from_org_id)):
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
                 reply_content+='\n```\n'
@@ -275,12 +287,7 @@ class ChatGPTModel(Model):
             if nres > 0:
                 resources = Session.get_resources(full_response, from_user_id, from_org_id)
 
-            wftool = WordFilter()
-            wfdict,_ = wftool.load_words(0)
-            wfdict_org,_ = wftool.load_words(get_org_id(from_org_id))
-            wfdict.update(wfdict_org)
-            full_response = wftool.replace_sensitive_words(full_response, wfdict)
-
+            full_response = run_word_filter(full_response, get_org_id(from_org_id)):
             full_response+='\n```sf-json\n'
             full_response+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
             full_response+='\n```\n'
