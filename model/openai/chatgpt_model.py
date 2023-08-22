@@ -144,7 +144,7 @@ class ChatGPTModel(Model):
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
                 logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity)
-                reply_content = run_word_filter(reply_content, get_org_id(from_org_id)):
+                reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
                 reply_content+='\n```\n'
@@ -159,7 +159,7 @@ class ChatGPTModel(Model):
             if nres > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
                 reply_content = Session.insert_resource_to_reply(reply_content, from_user_id, from_org_id)
-            reply_content = run_word_filter(reply_content, get_org_id(from_org_id)):
+            reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
             reply_content+='\n```sf-json\n'
             reply_content+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
             reply_content+='\n```\n'
@@ -245,7 +245,7 @@ class ChatGPTModel(Model):
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
                 logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity)
-                reply_content = run_word_filter(reply_content, get_org_id(from_org_id)):
+                reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
                 reply_content+='\n```\n'
@@ -287,7 +287,7 @@ class ChatGPTModel(Model):
             if nres > 0:
                 resources = Session.get_resources(full_response, from_user_id, from_org_id)
 
-            full_response = run_word_filter(full_response, get_org_id(from_org_id)):
+            full_response = run_word_filter(full_response, get_org_id(from_org_id))
             full_response+='\n```sf-json\n'
             full_response+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
             full_response+='\n```\n'
@@ -381,7 +381,7 @@ class Session(object):
                 log.info(f"[FAISS] semantic search: score:{similarity} < threshold:0.6")
                 return None, [], similarity
             '''
-            system_prompt = 'Use the following pieces of context to answer the customer inquiry.'
+            system_prompt = 'You are answering the question just like you are the owner or partner of the company described in the context.'
             if isinstance(character_desc, str) and character_desc != 'undef' and len(character_desc) > 0:
                 system_prompt = character_desc
             system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
