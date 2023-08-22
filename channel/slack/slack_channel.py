@@ -1,5 +1,6 @@
 # encoding:utf-8
 
+import os
 import re
 import json
 import html
@@ -18,6 +19,7 @@ from slack_sdk.oauth import AuthorizeUrlGenerator
 from slack_sdk.oauth.installation_store import FileInstallationStore, Installation
 from slack_sdk.oauth.state_store import FileOAuthStateStore
 from slack_sdk.web import WebClient
+from slack.errors import SlackApiError
 
 client_id = channel_conf(const.SLACK).get('slack_client_id')
 client_secret = channel_conf(const.SLACK).get('slack_client_secret')
@@ -258,6 +260,32 @@ def slack_commands():
 @flask_app.route("/slack/interactions", methods=["POST"])
 def slack_interactions():
     return handler.handle(request)
+
+@flask_app.route("/slack/postmsg", methods=["POST"])
+def slack_postmsg():
+    data=request.get_json()
+    team_id=data.get('team')
+    channel_id=data.get('channel')
+    message=data.get('message')
+    if team_id is None or channel_id is None or message is None:
+        return make_response(f"Invalid Request", 400)
+    bot_info_path=f"/opt/boltstore/installations/none-{team_id}/bot-latest"
+    if not os.path.exists(bot_info_path):
+        return make_response(f"Team:{team_id} Not Found", 404)
+    with open(bot_info_path, "r") as bot_info_json:
+        bot_info=json.load(bot_info_json)
+        bot_token=bot_info["bot_token"]
+    log.info(f"== client:postmsg {team_id} {channel_id} {bot_token}")
+    try:
+        response = app.client.chat_postMessage(
+            token=bot_token,
+            channel=channel_id,
+            text=message
+        )
+    except SlackApiError as e:
+        log.info(f"Failed to post a message {e.response}")
+        return make_response(f"{channel_id} Message Failed: {e.response}", 400)
+    return make_response(f"{channel_id} Message Posted", 200)
 
 class SlackChannel(Channel):
     def startup(self):
