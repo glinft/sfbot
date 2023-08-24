@@ -135,7 +135,7 @@ class ChatGPTModel(Model):
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
-            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, fwd)
+            new_query, hitdocs, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, fwd)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
@@ -161,7 +161,7 @@ class ChatGPTModel(Model):
                 reply_content = Session.insert_resource_to_reply(reply_content, from_user_id, from_org_id)
             reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
             reply_content+='\n```sf-json\n'
-            reply_content+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
+            reply_content+=json.dumps({'docs':hitdocs,'pages':refurls,'resources':resources,'logid':logid})
             reply_content+='\n```\n'
             #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, reply_content))
             return reply_content
@@ -236,7 +236,7 @@ class ChatGPTModel(Model):
             character_id = context.get('character_id')
             character_desc = context['character_desc']
             temperature = context['temperature']
-            new_query, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, fwd)
+            new_query, hitdocs, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, fwd)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
@@ -289,7 +289,7 @@ class ChatGPTModel(Model):
 
             full_response = run_word_filter(full_response, get_org_id(from_org_id))
             full_response+='\n```sf-json\n'
-            full_response+=json.dumps({'pages':refurls,'resources':resources,'logid':logid})
+            full_response+=json.dumps({'docs':hitdocs,'pages':refurls,'resources':resources,'logid':logid})
             full_response+='\n```\n'
             #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, full_response))
             yield True,full_response
@@ -374,12 +374,12 @@ class Session(object):
             log.info("[FAISS] semantic search done")
             if len(docs) == 0:
                 log.info("[FAISS] semantic search: None")
-                return None, [], similarity
+                return None, [], [], similarity
             similarity = float(docs[0][1])
             '''
             if len(docs) > 0 and similarity < 0.6:
                 log.info(f"[FAISS] semantic search: score:{similarity} < threshold:0.6")
-                return None, [], similarity
+                return None, [], [], similarity
             '''
             system_prompt = 'You are answering the question just like you are the owner or partner of the company described in the context.'
             if isinstance(character_desc, str) and character_desc != 'undef' and len(character_desc) > 0:
@@ -406,7 +406,7 @@ class Session(object):
             user_session[user_id] = session
             user_item = {'role': 'user', 'content': query}
             session.append(user_item)
-            return session, [], similarity
+            return session, [], [], similarity
 
         orgnum = get_org_id(org_id)
         botnum = str(get_bot_id(chatbot_id))
@@ -418,7 +418,9 @@ class Session(object):
         qna_output = None
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
-        qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field2(qnaorg, botnum, user_flag, "category", "qa"))
+        qnas = myredis.ft_search(embedded_query=myquery,
+                                 vector_field="title_vector",
+                                 hybrid_fields=myredis.create_hybrid_field2(qnaorg, botnum, user_flag, "category", "qa"))
         if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
             qna = qnas[0]
             log.info(f"Q/A: {qna.id} {qna.orgid} {qna.category} {qna.vector_score}")
@@ -430,7 +432,9 @@ class Session(object):
 
         log.info("[RDSFT] org={} {} {}".format(org_id, orgnum, qnaorg))
         similarity = 0.0
-        docs = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field2(str(orgnum), botnum, user_flag, "category", "kb"))
+        docs = myredis.ft_search(embedded_query=myquery,
+                                 vector_field="text_vector",
+                                 hybrid_fields=myredis.create_hybrid_field2(str(orgnum), botnum, user_flag, "category", "kb"))
         if len(docs) > 0:
             similarity = 1.0 - float(docs[0].vector_score)
             threshold = float(common_conf_val('similarity_threshold', 0.7))
@@ -455,7 +459,7 @@ class Session(object):
             user_session[user_id] = session
             user_item = {'role': 'user', 'content': query}
             session.append(user_item)
-            return session, [], similarity
+            return session, [], [], similarity
 
         system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
         system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
@@ -470,7 +474,7 @@ class Session(object):
             user_session[user_id] = session
             user_item = {'role': 'user', 'content': query}
             session.append(user_item)
-            return session, [], similarity
+            return session, [], [], similarity
 
         system_prompt += '\n' + config_prompt
         system_prompt += '\nContext:\n```'
@@ -514,6 +518,7 @@ class Session(object):
         log.info("[CHATGPT] prompt={}".format(system_prompt))
         refurls = get_unique_by_key(refurls, 'url')
         hitdocs = get_unique_by_key(hitdocs, 'key')
+        hitdocs = [{k: v for k, v in d.items() if k != 'key'} for d in hitdocs]
         for doc in hitdocs:
             increase_hit_count(doc['id'], doc['category'], doc['url'])
         if len(session) > 0 and session[0]['role'] == 'system':
@@ -523,7 +528,7 @@ class Session(object):
         user_session[user_id] = session
         user_item = {'role': 'user', 'content': query}
         session.append(user_item)
-        return session, refurls, similarity
+        return session, hitdocs, refurls, similarity
 
     @staticmethod
     def save_session(query, answer, user_id, org_id, chatbot_id, used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0):
