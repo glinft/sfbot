@@ -105,7 +105,12 @@ def chat():
         if len(splits)==2:
             extra=json.loads(splits[1][1:-4])
             reply_text=splits[0]
-        return {'result': reply_text, 'docs': extra.get('docs',[]), 'pages': extra.get('pages',[]), 'resources': extra.get('resources',[]), 'logid': extra.get('logid',None)}
+        return {'result': reply_text,
+                'docs': extra.get('docs',[]),
+                'pages': extra.get('pages',[]),
+                'resources': extra.get('resources',[]),
+                'score': extra.get('score',None),
+                'logid': extra.get('logid',None)}
 
 
 @http_app.route("/sfbot/sms", methods=['POST'])

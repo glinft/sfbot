@@ -155,13 +155,24 @@ class ChatGPTModel(Model):
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
             reply_content, logid = self.reply_text(new_query, query, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, 0)
+            reply_embedding = openai.Embedding.create(input=reply_content, model="text-embedding-ada-002")["data"][0]['embedding']
+            score = 0.0
+            orgnum = str(get_org_id(from_org_id))
+            botnum = str(get_bot_id(from_chatbot_id))
+            myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+            docs = myredis.ft_search(embedded_query=reply_embedding,
+                                     vector_field="text_vector",
+                                     hybrid_fields=myredis.create_hybrid_field2(orgnum, botnum, user_flag, "category", "kb"),
+                                     k=1)
+            if len(docs) > 0:
+                score = 1.0 - float(docs[0].vector_score)
             resources = []
             if nres > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
                 reply_content = Session.insert_resource_to_reply(reply_content, from_user_id, from_org_id)
             reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
             reply_content+='\n```sf-json\n'
-            reply_content+=json.dumps({'docs':hitdocs,'pages':refurls,'resources':resources,'logid':logid})
+            reply_content+=json.dumps({'docs':hitdocs,'pages':refurls,'resources':resources,'score':score,'logid':logid})
             reply_content+='\n```\n'
             #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, reply_content))
             return reply_content
