@@ -505,7 +505,8 @@ class Session(object):
                     dockeyparts = dockey.split(":")
                     fct = dockeyparts[1]
                     fid = dockeyparts[2]
-                    hitdocs.append({'id':fid,'category':fct,'url':urlhit,'key':f"{fid};{urlhit}"})
+                    if fct == 'file':
+                        hitdocs.append({'id':fid,'category':fct,'url':urlhit,'key':f"{fid};{urlhit}"})
             if float(doc.vector_score) < 0.2:
                 docurl = myredis.redis.hget(doc.id, 'source')
                 if docurl is None:
