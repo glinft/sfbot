@@ -220,14 +220,15 @@ class ChatGPTModel(Model):
             except ValueError:
                 temperature = model_conf(const.OPEN_AI).get("temperature", 0.75)
 
-            use_azure = False
             orgnum = get_org_id(org_id)
-            if orgnum == 4:
-                use_azure = True
-                select_gpt_service('azure')
+            use_azure = True if orgnum==4 else False
             response = openai.ChatCompletion.create(
+                api_base=(model_conf(const.OPEN_AI).get('azure_api_base') if use_azure else None),
+                api_key=(model_conf(const.OPEN_AI).get('azure_api_key') if use_azure else None),
+                api_type=("azure" if use_azure else None),
+                api_version=("2023-05-15" if use_azure else None),
+                engine=("base" if use_azure else None), # Azure deployment Name
                 model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
-                engine=('base' if use_azure else None), # Azure deployment Name
                 messages=query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
@@ -235,9 +236,6 @@ class ChatGPTModel(Model):
                 frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
                 presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0)  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
             )
-            if use_azure:
-                use_azure = False
-                select_gpt_service()
             reply_content = response.choices[0]['message']['content']
             used_tokens = response['usage']['total_tokens']
             prompt_tokens = response['usage']['prompt_tokens']
