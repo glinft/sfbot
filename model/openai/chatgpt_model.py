@@ -514,7 +514,7 @@ class Session(object):
         for i, doc in enumerate(docs):
             log.info(f"{i}) {doc.id} {doc.orgid} {doc.category} {doc.vector_score}")
             system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
-            if float(doc.vector_score) < 0.3:
+            if float(doc.vector_score) < 0.15:
                 urlhit = ''
                 docurl = myredis.redis.hget(doc.id, 'source')
                 if docurl is not None:
