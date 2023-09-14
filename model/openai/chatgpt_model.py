@@ -92,8 +92,18 @@ def increase_hit_count(fid, category, url=''):
     query = f"mutation {gqlfunc} {{ {gqlfunc}( id:{fid}, category:\"{category}\", url:\"{url}\" ) }}"
     gqldata = { "query": query, "variables": {}, }
     gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
-    log.info(f"GQL/{gqlfunc}: {category}:{fid} {gqlresp.status_code} {query}")
-    log.debug(f"GQL/{gqlfunc}: {category}:{fid} {gqlresp.json()}")
+    log.info(f"GQL/{gqlfunc}: #{fid} {gqlresp.status_code} {query}")
+    log.debug(f"GQL/{gqlfunc}: #{fid} {gqlresp.json()}")
+
+def send_query_notification(rid, str1, str2):
+    gqlurl = 'http://127.0.0.1:5000/graphql'
+    gqlfunc = 'notiSfbotNotification'
+    headers = { "Content-Type": "application/json", }
+    query = f"mutation {gqlfunc} {{ {gqlfunc}( id:{rid}, content:\"{str1}\n\n{str2}\" ) }}"
+    gqldata = { "query": query, "variables": {}, }
+    gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
+    log.info(f"GQL/{gqlfunc}: #{rid} {gqlresp.status_code} {query}")
+    log.debug(f"GQL/{gqlfunc}: #{rid} {gqlresp.json()}")
 
 def run_word_filter(text, org_id):
     wftool = WordFilter()
@@ -166,6 +176,16 @@ class ChatGPTModel(Model):
                                      k=1)
             if len(docs) > 0:
                 score = 1.0 - float(docs[0].vector_score)
+
+            qemb = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
+            qnts = myredis.ft_search(embedded_query=qemb, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(orgnum, "category", "qnt"), k=3)
+            if len(qnts) > 0:
+                for i, qnt in enumerate(qnts):
+                    if float(qnt.vector_score) > 0.2:
+                        break
+                    rid = myredis.redis.hget(qnt.id, 'id').decode()
+                    send_query_notification(rid, query, reply_content)
+
             resources = []
             if nres > 0:
                 resources = Session.get_resources(reply_content, from_user_id, from_org_id)
