@@ -99,7 +99,9 @@ def send_query_notification(rid, str1, str2):
     gqlurl = 'http://127.0.0.1:5000/graphql'
     gqlfunc = 'notiSfbotNotification'
     headers = { "Content-Type": "application/json", }
-    query = f"mutation {gqlfunc} {{ {gqlfunc}( id:{rid}, content:\"{str1}\n\n{str2}\" ) }}"
+    chatstr = f"{str1}\n\n{str2}"
+    content = base64.b64encode(chatstr.encode('utf-8')).decode('utf-8')
+    query = f"mutation {gqlfunc} {{ {gqlfunc}( id:{rid}, content:\"{content}\" ) }}"
     gqldata = { "query": query, "variables": {}, }
     gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
     log.info(f"GQL/{gqlfunc}: #{rid} {gqlresp.status_code} {query}")
