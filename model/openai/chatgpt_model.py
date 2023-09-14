@@ -126,6 +126,17 @@ class ChatGPTModel(Model):
             openai.proxy = proxy
         log.info("[CHATGPT] api_base={} proxy={}".format(
             api_base, proxy))
+
+    def select_gpt_service(self, vendor='default'):
+        if vendor == 'azure':
+            openai.api_key = model_conf(const.OPEN_AI).get('azure_api_key')
+            openai.api_base = model_conf(const.OPEN_AI).get('azure_api_base')
+            openai.api_type = 'azure'
+            openai.api_version = '2023-05-15'
+        else:
+            openai.api_key = model_conf(const.OPEN_AI).get('api_key')
+            openai.api_base = model_conf(const.OPEN_AI).get('api_base')
+
     def reply(self, query, context=None):
         # acquire reply content
         if not context or not context.get('type') or context.get('type') == 'TEXT':
@@ -177,8 +188,8 @@ class ChatGPTModel(Model):
             if len(docs) > 0:
                 score = 1.0 - float(docs[0].vector_score)
 
-            qemb = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
-            qnts = myredis.ft_search(embedded_query=qemb, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(orgnum, "category", "qnt"), k=3)
+            query_embedding = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
+            qnts = myredis.ft_search(embedded_query=query_embedding, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(orgnum, "category", "qnt"), k=3)
             if len(qnts) > 0:
                 for i, qnt in enumerate(qnts):
                     if float(qnt.vector_score) > 0.2:
@@ -209,15 +220,24 @@ class ChatGPTModel(Model):
             except ValueError:
                 temperature = model_conf(const.OPEN_AI).get("temperature", 0.75)
 
+            use_azure = False
+            orgnum = get_org_id(org_id)
+            if orgnum == 4:
+                use_azure = True
+                select_gpt_service('azure')
             response = openai.ChatCompletion.create(
-                model= model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
+                model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
+                engine=('base' if use_azure else None), # Azure deployment Name
                 messages=query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
                 #top_p=model_conf(const.OPEN_AI).get("top_p", 0.7),,  #候选词列表。0.7 意味着只考虑前70%候选词的标记，建议和temperature参数二选一使用
                 frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
                 presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0)  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
-                )
+            )
+            if use_azure:
+                use_azure = False
+                select_gpt_service()
             reply_content = response.choices[0]['message']['content']
             used_tokens = response['usage']['total_tokens']
             prompt_tokens = response['usage']['prompt_tokens']
