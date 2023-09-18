@@ -469,9 +469,7 @@ class Session(object):
         qna_output = None
         myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
-        qnas = myredis.ft_search(embedded_query=myquery,
-                                 vector_field="title_vector",
-                                 hybrid_fields=myredis.create_hybrid_field2(qnaorg, botnum, user_flag, "category", "qa"))
+        qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field(qnaorg, "category", "qa"))
         if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
             qna = qnas[0]
             log.info(f"Q/A: {qna.id} {qna.orgid} {qna.category} {qna.vector_score}")
