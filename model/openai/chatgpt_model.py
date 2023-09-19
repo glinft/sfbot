@@ -169,13 +169,13 @@ class ChatGPTModel(Model):
             if len(atcs) > 0:
                 commands = []
                 for i, atc in enumerate(atcs):
-                    if float(atc.vector_score) > 0.2:
+                    if float(atc.vector_score) > 0.15:
                         break
                     cid = myredis.redis.hget(atc.id, 'id').decode()
                     csf = 1.0 - float(atc.vector_score)
                     commands.append({'id':cid,'category':"actionTransformer",'score':csf})
                 if len(commands) > 0:
-                    reply_content+='Sflow Action Transformer\n```sf-json\n'
+                    reply_content='Sflow Action Transformer\n```sf-json\n'
                     reply_content+=json.dumps({'docs':commands,'pages':[],'resources':[],'score':0.0,'logid':0})
                     reply_content+='\n```\n'
                     return reply_content
