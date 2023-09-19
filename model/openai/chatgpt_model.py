@@ -158,6 +158,28 @@ class ChatGPTModel(Model):
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
+            orgnum = str(get_org_id(from_org_id))
+            botnum = str(get_bot_id(from_chatbot_id))
+            query_embedding = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
+            myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+            atcs = myredis.ft_search(embedded_query=query_embedding,
+                                     vector_field="text_vector",
+                                     hybrid_fields=myredis.create_hybrid_field1(orgnum, user_flag, "category", "atc"),
+                                     k=3)
+            if len(atcs) > 0:
+                commands = []
+                for i, atc in enumerate(atcs):
+                    if float(atc.vector_score) > 0.2:
+                        break
+                    cid = myredis.redis.hget(atc.id, 'id').decode()
+                    csf = 1.0 - float(atc.vector_score)
+                    commands.append({'id':cid,'category':"actionTransformer",'score':csf})
+                if len(commands) > 0:
+                    reply_content+='Sflow Action Transformer\n```sf-json\n'
+                    reply_content+=json.dumps({'docs':commands,'pages':[],'resources':[],'score':0.0,'logid':0})
+                    reply_content+='\n```\n'
+                    return reply_content
+
             new_query, hitdocs, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, fwd)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
@@ -179,18 +201,14 @@ class ChatGPTModel(Model):
 
             reply_content, logid = self.reply_text(new_query, query, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, 0)
             reply_embedding = openai.Embedding.create(input=reply_content, model="text-embedding-ada-002")["data"][0]['embedding']
-            score = 0.0
-            orgnum = str(get_org_id(from_org_id))
-            botnum = str(get_bot_id(from_chatbot_id))
-            myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
             docs = myredis.ft_search(embedded_query=reply_embedding,
                                      vector_field="text_vector",
                                      hybrid_fields=myredis.create_hybrid_field2(orgnum, botnum, user_flag, "category", "kb"),
                                      k=1)
+            score = 0.0
             if len(docs) > 0:
                 score = 1.0 - float(docs[0].vector_score)
 
-            query_embedding = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
             qnts = myredis.ft_search(embedded_query=query_embedding, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(orgnum, "category", "qnt"), k=3)
             if len(qnts) > 0:
                 for i, qnt in enumerate(qnts):

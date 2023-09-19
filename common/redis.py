@@ -15,6 +15,12 @@ class RedisSingleton:
     def create_hybrid_field(self, orgid: str, field_name: str, value: str) -> str:
         return f'(@orgid:{orgid} @{field_name}:"{value}")'
 
+    def create_hybrid_field1(self, orgid: str, userflag: str, field_name: str, value: str) -> str:
+        filter = '[1 1]'
+        if userflag == 'internal':
+            filter = '[0 1]'
+        return f'(@orgid:{orgid} @public:{filter} @{field_name}:"{value}")'
+
     def create_hybrid_field2(self, orgid: str, chatbotid: str, userflag: str, field_name: str, value: str) -> str:
         filter = '[1 1]'
         if userflag == 'internal':
