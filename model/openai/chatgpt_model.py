@@ -188,7 +188,7 @@ class ChatGPTModel(Model):
                     reply_content+='\n```\n'
                     return reply_content
 
-            new_query, hitdocs, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
+            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
@@ -196,7 +196,7 @@ class ChatGPTModel(Model):
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity)
+                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity, use_faiss)
                 reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
@@ -207,7 +207,7 @@ class ChatGPTModel(Model):
             #     # reply in stream
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
-            reply_content, logid = self.reply_text(new_query, query, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, 0)
+            reply_content, logid = self.reply_text(new_query, query, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, use_faiss, 0)
             reply_embedding = openai.Embedding.create(input=reply_content, model="text-embedding-ada-002")["data"][0]['embedding']
             docs = myredis.ft_search(embedded_query=reply_embedding,
                                      vector_field="text_vector",
@@ -240,7 +240,7 @@ class ChatGPTModel(Model):
         elif context.get('type', None) == 'IMAGE_CREATE':
             return self.create_img(query, 0)
 
-    def reply_text(self, query, qtext, user_id, org_id, chatbot_id, similarity, temperature, retry_count=0):
+    def reply_text(self, query, qtext, user_id, org_id, chatbot_id, similarity, temperature, use_faiss=False, retry_count=0):
         try:
             try:
                 temperature = float(temperature)
@@ -272,7 +272,7 @@ class ChatGPTModel(Model):
             log.debug(response)
             log.info("[CHATGPT] usage={}", response['usage'])
             log.info("[CHATGPT] reply={}", reply_content)
-            logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity)
+            logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
             return reply_content, logid
         except openai.error.RateLimitError as e:
             # rate limit exception
@@ -280,7 +280,7 @@ class ChatGPTModel(Model):
             if retry_count < 1:
                 time.sleep(5)
                 log.warn("[CHATGPT] RateLimit exceed, retry {} attempts".format(retry_count+1))
-                return self.reply_text(query, qtext, user_id, org_id, chatbot_id, similarity, temperature, retry_count+1)
+                return self.reply_text(query, qtext, user_id, org_id, chatbot_id, similarity, temperature, use_faiss, retry_count+1)
             else:
                 return "You're asking too quickly, please take a break before asking me again.", None
         except openai.error.APIConnectionError as e:
@@ -316,7 +316,7 @@ class ChatGPTModel(Model):
             temperature = context['temperature']
             website = context.get('website','undef')
             email = context.get('email','undef')
-            new_query, hitdocs, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
+            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
@@ -324,7 +324,7 @@ class ChatGPTModel(Model):
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity)
+                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity, use_faiss)
                 reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
@@ -361,7 +361,7 @@ class ChatGPTModel(Model):
             prompt_tokens = num_tokens_from_messages(new_query)
             completion_tokens = num_tokens_from_string(full_response)
             used_tokens = prompt_tokens + completion_tokens
-            logid = Session.save_session(query, full_response, from_user_id, from_org_id, from_chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity)
+            logid = Session.save_session(query, full_response, from_user_id, from_org_id, from_chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
 
             resources = []
             if nres > 0:
@@ -461,12 +461,12 @@ class Session(object):
             log.info("[FAISS] semantic search done")
             if len(docs) == 0:
                 log.info("[FAISS] semantic search: None")
-                return None, [], [], similarity
+                return None, [], [], similarity, True
             similarity = float(docs[0][1])
             '''
             if len(docs) > 0 and similarity < 0.6:
                 log.info(f"[FAISS] semantic search: score:{similarity} < threshold:0.6")
-                return None, [], [], similarity
+                return None, [], [], similarity, True
             '''
             system_prompt = 'You are answering the question just like you are the owner or partner of the company described in the context.'
             if isinstance(character_desc, str) and character_desc != 'undef' and len(character_desc) > 0:
@@ -493,7 +493,7 @@ class Session(object):
             user_session[user_id] = session
             user_item = {'role': 'user', 'content': query}
             session.append(user_item)
-            return session, [], [], similarity
+            return session, [], [], similarity, True
 
         orgnum = get_org_id(org_id)
         botnum = str(get_bot_id(chatbot_id))
@@ -544,7 +544,7 @@ class Session(object):
             user_session[user_id] = session
             user_item = {'role': 'user', 'content': query}
             session.append(user_item)
-            return session, [], [], similarity
+            return session, [], [], similarity, False
 
         system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
         system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
@@ -559,7 +559,7 @@ class Session(object):
             user_session[user_id] = session
             user_item = {'role': 'user', 'content': query}
             session.append(user_item)
-            return session, [], [], similarity
+            return session, [], [], similarity, False
 
         system_prompt += '\n' + config_prompt
         system_prompt += '\nContext:\n```'
@@ -614,10 +614,10 @@ class Session(object):
         user_session[user_id] = session
         user_item = {'role': 'user', 'content': query}
         session.append(user_item)
-        return session, hitdocs, refurls, similarity
+        return session, hitdocs, refurls, similarity, False
 
     @staticmethod
-    def save_session(query, answer, user_id, org_id, chatbot_id, used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0):
+    def save_session(query, answer, user_id, org_id, chatbot_id, used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0, use_faiss=False):
         max_tokens = model_conf(const.OPEN_AI).get('conversation_max_tokens')
         max_history_num = model_conf(const.OPEN_AI).get('max_history_num', None)
         if not max_tokens or max_tokens > 4000:
@@ -639,7 +639,7 @@ class Session(object):
                 session.pop(1)
                 session.pop(1)
 
-        if re.match(md5sum_pattern, user_id) and os.path.exists(f"{faiss_store_root}{user_id}"):
+        if use_faiss:
             return None
 
         if used_tokens > 0:
