@@ -14,6 +14,7 @@ import re
 import requests
 import base64
 import random
+import hashlib
 import tiktoken
 from datetime import datetime
 from langchain.embeddings import OpenAIEmbeddings
@@ -23,6 +24,11 @@ from urllib.parse import urlparse, urlunparse
 user_session = dict()
 md5sum_pattern = r'^[0-9a-f]{32}$'
 faiss_store_root= "/opt/faiss/"
+
+def calculate_md5(text):
+    md5_hash = hashlib.md5()
+    md5_hash.update(text.encode('utf-8'))
+    return md5_hash.hexdigest()
 
 def get_org_bot(input_string):
     parts = input_string.split(':')
@@ -436,11 +442,18 @@ class Session(object):
         '''
         config_prompt = common_conf_val("input_prompt", "")
         session = user_session.get(user_id, [])
-        if re.match(md5sum_pattern, user_id) and os.path.exists(f"{faiss_store_root}{user_id}"):
-            faiss_store_path = f"{faiss_store_root}{user_id}"
+
+        faiss_id = user_id
+        if isinstance(website, str) and website != 'undef' and len(website) > 0:
+            faiss_id = calculate_md5('website:'+re.sub(r'https?://','',website.lower()))
+        elif isinstance(email, str) and email != 'undef' and len(email) > 0:
+            faiss_id = calculate_md5(email.lower())
+
+        if re.match(md5sum_pattern, faiss_id) and os.path.exists(f"{faiss_store_root}{faiss_id}"):
+            faiss_store_path = f"{faiss_store_root}{faiss_id}"
             mykey = model_conf(const.OPEN_AI).get('api_key')
             embeddings = OpenAIEmbeddings(openai_api_key=mykey)
-            log.info("[FAISS] try to load local store {}".format(user_id))
+            log.info("[FAISS] try to load local store {}".format(faiss_id))
             dbx = FAISS.load_local(faiss_store_path, embeddings)
             log.info("[FAISS] local store loaded")
             similarity = 0.0
