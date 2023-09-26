@@ -184,7 +184,7 @@ class ChatGPTModel(Model):
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
-            log.debug("[CHATGPT] session query={}".format(new_query))
+            log.info("[CHATGPT] session query={}".format(new_query))
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
@@ -212,6 +212,7 @@ class ChatGPTModel(Model):
             qnts = myredis.ft_search(embedded_query=query_embedding, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(orgnum, "category", "qnt"), k=3)
             if len(qnts) > 0:
                 for i, qnt in enumerate(qnts):
+                    log.info(f"{i}) {qnt.id} {qnt.orgid} {qnt.category} {qnt.vector_score}")
                     if float(qnt.vector_score) > 0.2:
                         break
                     rid = myredis.redis.hget(qnt.id, 'id').decode()
@@ -309,7 +310,7 @@ class ChatGPTModel(Model):
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
-            log.debug("[CHATGPT] session query={}".format(new_query))
+            log.info("[CHATGPT] session query={}".format(new_query))
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
