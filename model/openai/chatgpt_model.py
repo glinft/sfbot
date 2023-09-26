@@ -451,7 +451,8 @@ class Session(object):
             log.info("[FAISS] try to search data of email:{}".format(email))
             faiss_id = calculate_md5(email.lower())
 
-        log.info("[FAISS] try to load local store {}".format(faiss_id))
+        if re.match(md5sum_pattern, faiss_id):
+            log.info("[FAISS] try to load local store {}".format(faiss_id))
         if re.match(md5sum_pattern, faiss_id) and os.path.exists(f"{faiss_store_root}{faiss_id}"):
             faiss_store_path = f"{faiss_store_root}{faiss_id}"
             mykey = model_conf(const.OPEN_AI).get('api_key')
