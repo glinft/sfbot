@@ -150,8 +150,10 @@ class ChatGPTModel(Model):
             nres = int(context.get('res','0'))
             fwd = int(context.get('fwd','0'))
             character_id = context.get('character_id')
-            character_desc = context['character_desc']
+            character_desc = context.get('character_desc')
             temperature = context['temperature']
+            website = context.get('website','undef')
+            email = context.get('email','undef')
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
             if query in clear_memory_commands:
                 log.info('[CHATGPT] reset session: {}'.format(from_user_id))
@@ -180,7 +182,7 @@ class ChatGPTModel(Model):
                     reply_content+='\n```\n'
                     return reply_content
 
-            new_query, hitdocs, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, fwd)
+            new_query, hitdocs, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
@@ -304,9 +306,11 @@ class ChatGPTModel(Model):
             nres = int(context.get('res','0'))
             fwd = int(context.get('fwd','0'))
             character_id = context.get('character_id')
-            character_desc = context['character_desc']
+            character_desc = context.get('character_desc')
             temperature = context['temperature']
-            new_query, hitdocs, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, fwd)
+            website = context.get('website','undef')
+            email = context.get('email','undef')
+            new_query, hitdocs, refurls, similarity = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
@@ -417,7 +421,7 @@ class ChatGPTModel(Model):
 
 class Session(object):
     @staticmethod
-    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc=None, character_id=None, fwd=0):
+    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc=None, character_id=None, website=None, email=None, fwd=0):
         '''
         build query with conversation history
         e.g.  [

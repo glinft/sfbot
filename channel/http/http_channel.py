@@ -220,6 +220,10 @@ class HttpChannel(Channel):
         context['character_desc'] = str(character_desc)
         temperature = data.get("temperature", 'undef')
         context['temperature'] = str(temperature)
+        website= data.get("website", 'undef')
+        context['website'] = str(website)
+        email= data.get("email", 'undef')
+        context['email'] = str(email)
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
             'channel': self, 'context': query,  "args": context}))
         reply = e_context['reply']
@@ -250,6 +254,10 @@ class HttpChannel(Channel):
         context['character_desc'] = str(character_desc)
         temperature = data.get("temperature", 'undef')
         context['temperature'] = str(temperature)
+        website= data.get("website", 'undef')
+        context['website'] = str(website)
+        email= data.get("email", 'undef')
+        context['email'] = str(email)
         context['stream'] = True
         context['origin'] = query
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
