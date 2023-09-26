@@ -445,15 +445,17 @@ class Session(object):
 
         faiss_id = user_id
         if isinstance(website, str) and website != 'undef' and len(website) > 0:
+            log.info("[FAISS] try to search data of website:{}".format(website))
             faiss_id = calculate_md5('website:'+re.sub(r'https?://','',website.lower()))
         elif isinstance(email, str) and email != 'undef' and len(email) > 0:
+            log.info("[FAISS] try to search data of email:{}".format(email))
             faiss_id = calculate_md5(email.lower())
 
+        log.info("[FAISS] try to load local store {}".format(faiss_id))
         if re.match(md5sum_pattern, faiss_id) and os.path.exists(f"{faiss_store_root}{faiss_id}"):
             faiss_store_path = f"{faiss_store_root}{faiss_id}"
             mykey = model_conf(const.OPEN_AI).get('api_key')
             embeddings = OpenAIEmbeddings(openai_api_key=mykey)
-            log.info("[FAISS] try to load local store {}".format(faiss_id))
             dbx = FAISS.load_local(faiss_store_path, embeddings)
             log.info("[FAISS] local store loaded")
             similarity = 0.0
