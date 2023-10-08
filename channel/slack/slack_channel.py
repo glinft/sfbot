@@ -24,7 +24,7 @@ from slack.errors import SlackApiError
 client_id = channel_conf(const.SLACK).get('slack_client_id')
 client_secret = channel_conf(const.SLACK).get('slack_client_secret')
 signing_secret = channel_conf(const.SLACK).get('slack_signing_secret')
-state_store = FileOAuthStateStore(expiration_seconds=600, base_dir="/opt/boltstore/states")
+state_store = FileOAuthStateStore(expiration_seconds=86400, base_dir="/opt/boltstore/states")
 installation_store = FileInstallationStore(base_dir="/opt/boltstore/installations")
 authorize_url_generator = AuthorizeUrlGenerator(
     client_id=client_id,
