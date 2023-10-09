@@ -168,6 +168,7 @@ class ChatGPTModel(Model):
 
             orgnum = str(get_org_id(from_org_id))
             botnum = str(get_bot_id(from_chatbot_id))
+            commands = []
             query_embedding = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
             myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
             atcs = myredis.ft_search(embedded_query=query_embedding,
@@ -175,18 +176,12 @@ class ChatGPTModel(Model):
                                      hybrid_fields=myredis.create_hybrid_field1(orgnum, user_flag, "category", "atc"),
                                      k=3)
             if len(atcs) > 0:
-                commands = []
                 for i, atc in enumerate(atcs):
                     if float(atc.vector_score) > 0.15:
                         break
                     cid = myredis.redis.hget(atc.id, 'id').decode()
                     csf = 1.0 - float(atc.vector_score)
                     commands.append({'id':cid,'category':"actionTransformer",'score':csf})
-                if len(commands) > 0:
-                    reply_content='Sflow Action Transformer\n```sf-json\n'
-                    reply_content+=json.dumps({'docs':commands,'pages':[],'resources':[],'score':0.0,'logid':0})
-                    reply_content+='\n```\n'
-                    return reply_content
 
             new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
             if new_query is None:
@@ -232,7 +227,7 @@ class ChatGPTModel(Model):
                 reply_content = Session.insert_resource_to_reply(reply_content, from_user_id, from_org_id)
             reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
             reply_content+='\n```sf-json\n'
-            reply_content+=json.dumps({'docs':hitdocs,'pages':refurls,'resources':resources,'score':score,'logid':logid})
+            reply_content+=json.dumps({'docs':hitdocs,'pages':refurls,'resources':resources,'commands':commands,'score':score,'logid':logid})
             reply_content+='\n```\n'
             #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, reply_content))
             return reply_content
