@@ -44,11 +44,27 @@ async def return_stream(data):
                 response=splits[0]
             if (final):
                 socketio.server.emit(
-                    'disconnect', {'result': response, 'docs': extra.get('docs',[]), 'pages': extra.get('pages',[]), 'resources': extra.get('resources',[]), 'logid': extra.get('logid',None), 'final': final}, request.sid, namespace="/sfbot/chat")
+                    'disconnect', {
+                        'result': response,
+                        'docs': extra.get('docs',[]),
+                        'pages': extra.get('pages',[]),
+                        'resources': extra.get('resources',[]),
+                        'commands': extra.get('commands',[]),
+                        'logid': extra.get('logid',None),
+                        'final': final,
+                    }, request.sid, namespace="/sfbot/chat")
                 disconnect()
             else:
                 socketio.server.emit(
-                    'message', {'result': response, 'docs': extra.get('docs',[]), 'pages': extra.get('pages',[]), 'resources': extra.get('resources',[]), 'logid': extra.get('logid',None), 'final': final}, request.sid, namespace="/sfbot/chat")
+                    'message', {
+                        'result': response,
+                        'docs': extra.get('docs',[]),
+                        'pages': extra.get('pages',[]),
+                        'resources': extra.get('resources',[]),
+                        'commands': extra.get('commands',[]),
+                        'logid': extra.get('logid',None),
+                        'final': final,
+                    }, request.sid, namespace="/sfbot/chat")
         except Exception as e:
             disconnect()
             log.warn("[http]emit:{}", e)
@@ -109,6 +125,7 @@ def chat():
                 'docs': extra.get('docs',[]),
                 'pages': extra.get('pages',[]),
                 'resources': extra.get('resources',[]),
+                'commands': extra.get('commands',[]),
                 'score': extra.get('score',None),
                 'logid': extra.get('logid',None)}
 
