@@ -507,11 +507,17 @@ class Session(object):
         if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
             qna = qnas[0]
             log.info(f"Q/A: {qna.id} {qna.orgid} {qna.category} {qna.vector_score}")
-            qnatext = myredis.redis.hget(qna.id, 'text').decode()
-            answers = json.loads(qnatext)
-            qna_output = random.choice(answers)
-            fid = myredis.redis.hget(qna.id, 'id').decode()
-            increase_hit_count(fid, 'qa', '')
+            try:
+                qnatext = myredis.redis.hget(qna.id, 'text').decode()
+                answers = json.loads(qnatext)
+                if len(answers)>0:
+                    qna_output = random.choice(answers)
+                    fid = myredis.redis.hget(qna.id, 'id').decode()
+                    increase_hit_count(fid, 'qa', '')
+            except json.JSONDecodeError as e:
+                pass
+            except Exception as e:
+                pass
 
         log.info("[RDSFT] org={} {} {}".format(org_id, orgnum, qnaorg))
         similarity = 0.0
