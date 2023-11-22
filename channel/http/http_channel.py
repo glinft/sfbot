@@ -241,6 +241,14 @@ class HttpChannel(Channel):
         context['website'] = str(website)
         email= data.get("email", 'undef')
         context['email'] = str(email)
+        teammode = data.get("teammode", 0)
+        context['teammode'] = str(teammode)
+        teambotkeep = data.get("teambotkeep", 0)
+        context['teambotkeep'] = str(teambotkeep)
+        teamid = data.get("teamid", 0)
+        context['teamid'] = str(teamid)
+        teambotid = data.get("teambotid", 0)
+        context['teambotid'] = str(teambotid)
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
             'channel': self, 'context': query,  "args": context}))
         reply = e_context['reply']
@@ -275,6 +283,14 @@ class HttpChannel(Channel):
         context['website'] = str(website)
         email= data.get("email", 'undef')
         context['email'] = str(email)
+        teammode = data.get("teammode", 0)
+        context['teammode'] = str(teammode)
+        teambotkeep = data.get("teambotkeep", 0)
+        context['teambotkeep'] = str(teambotkeep)
+        teamid = data.get("teamid", 0)
+        context['teamid'] = str(teamid)
+        teambotid = data.get("teambotid", 0)
+        context['teambotid'] = str(teambotid)
         context['stream'] = True
         context['origin'] = query
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {

@@ -160,11 +160,30 @@ class ChatGPTModel(Model):
             temperature = context['temperature']
             website = context.get('website','undef')
             email = context.get('email','undef')
+
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
             if query in clear_memory_commands:
                 log.info('[CHATGPT] reset session: {}'.format(from_user_id))
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
+
+            teammode = int(context.get('teammode','0'))
+            teambotkeep = int(context.get('teambotkeep','0'))
+            teamid = int(context.get('teamid','0'))
+            teambotid = int(context.get('teambotid','0'))
+            if teammode == 1:
+                if teambotkeep == 1 and teambotid == 0:
+                    teambotkeep = 0
+                if teambotkeep == 0:
+                    newteambot, newteam = self.find_teambot(from_user_id, from_org_id, from_chatbot_id, teamid, query)
+                    if newteambot > 0:
+                        teamid = newteam
+                        teambotid = newteambot
+                    else:
+                        if teambotid == 0:
+                            teammode = 0
+            if teammode == 1:
+                log.info("[CHATGPT] teambot={}/{} query={}".format(teamid,teambotid,query))
 
             orgnum = str(get_org_id(from_org_id))
             botnum = str(get_bot_id(from_chatbot_id))
@@ -234,6 +253,58 @@ class ChatGPTModel(Model):
 
         elif context.get('type', None) == 'IMAGE_CREATE':
             return self.create_img(query, 0)
+
+    def find_teambot(self, user_id, org_id, chatbot_id, team_id, query):
+        myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+        team_info = '# Team Information\n'
+        team_keys = []
+        if team_id > 0:
+            team_key = "sfteam:org:{}:team:{}:data".format(org_id,team_id)
+            team_keys.append(team_key)
+        else:
+            key_pattern = "sfteam:org:{}:team:*:data".format(org_id)
+            keys_matched = myredis.redis.keys(key_pattern)
+            for key in keys_matched:
+                team_keys.append(key.decode())
+        for key in team_keys:
+            team_desc = myredis.redis.hget(key, 'team_desc').decode()
+            team_info += team_desc+'\n'
+        sys_msg = (
+            "You are a contact-center manager, and you try to dispatch the user query to the most suitable team/agent.\n"
+            "You only provide factual answers to queries, and do not try to make up an answer.\n"
+            "The functionality and responsibility of teams are described below in markdown format.\n\n"
+            f"```markdown\n{team_info}\n```\n"
+        )
+        usr_msg = (
+            "Here is user query.\n"
+            f"```\n{query}\n```\n\n"
+            "Reply the dispatchment in json format with 2 keys named team_id and agent_id.\n"
+            "If you have no idea about how to dispatch based on the given team information, simply return team_id=0 and agent_id=0.\n"
+            "The answer should be only json string and nothing else.\n"
+        )
+        msgs = [{'role':'system','content':sys_msg},{'role':'user','content':usr_msg}]
+        try:
+            use_azure = True if orgnum==4 else False
+            response = openai.ChatCompletion.create(
+                api_base=(model_conf(const.OPEN_AI).get('azure_api_base') if use_azure else None),
+                api_key=(model_conf(const.OPEN_AI).get('azure_api_key') if use_azure else None),
+                api_type=("azure" if use_azure else None),
+                api_version=("2023-05-15" if use_azure else None),
+                engine=("base" if use_azure else None),
+                model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",
+                messages=msgs,
+                temperature=0.1,
+                frequency_penalty=0.0,
+                presence_penalty=0.0,
+            )
+            reply_content = response.choices[0]['message']['content']
+            reply_usage = response['usage']
+            log.info("[CHATGPT] find_teambot: result={} usage={}".format(reply_content,reply_usage))
+            dispatch = json.loads(reply_content)
+            return int(dispatch['agent_id']), int(dispatch['team_id'])
+        except Exception as e:
+            log.exception(e)
+            return 0, 0
 
     def reply_text(self, query, qtext, user_id, org_id, chatbot_id, similarity, temperature, use_faiss=False, retry_count=0):
         try:
