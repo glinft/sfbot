@@ -210,10 +210,11 @@ class ChatGPTModel(Model):
                 teambot_instruction = (
                     f"You are {teambot_name}.\n{teambot_desc}.\n"
                     "You only provide factual answers to queries, and do not try to make up an answer.\n"
+                    "Do not try to answer the queries that are irrelevant to your functionality and responsibility, just reject them politely.\n"
                     "Your functionality and responsibility are described below in markdown format.\n\n"
                     f"```markdown\n{teambot_prompt}\n```\n"
                 )
-                character_id = f"t{teambotid}"
+                character_id = f"x{teambotid}"
                 character_desc = teambot_instruction
                 log.info("[CHATGPT] teambot character id={} desc={}".format(character_id,character_desc))
 
