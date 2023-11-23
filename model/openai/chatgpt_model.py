@@ -186,6 +186,7 @@ class ChatGPTModel(Model):
                     else:
                         if teambotid == 0:
                             teammode = 0
+                            teamid = 0
                 else:
                     if teamid == 0 and teambotid > 0:
                         teambot_pattern = "sfteam:org:{}:team:*:bot:{}".format(orgnum,teambotid)
