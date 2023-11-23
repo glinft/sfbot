@@ -573,11 +573,13 @@ class Session(object):
             system_prompt = 'You are answering the question just like you are the owner or partner of the company described in the context.'
             if isinstance(character_desc, str) and character_desc != 'undef' and len(character_desc) > 0:
                 system_prompt = character_desc
-            system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
-            system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
-            system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
-            system_prompt += '\n' + config_prompt
-            system_prompt += '\nContext:\n```'
+            if isinstance(character_id, str) and character_id.startswith('x'):
+                system_prompt += f"\n{config_prompt}\n```"
+            else:
+                system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
+                system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
+                system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
+                system_prompt += f"\n{config_prompt}\n```"
             for doc, score in docs:
                 log.info("[FAISS] {} {}".format(score, json.dumps(doc.metadata)))
                 '''
@@ -600,7 +602,7 @@ class Session(object):
         orgnum = get_org_id(org_id)
         botnum = str(get_bot_id(chatbot_id))
         qnaorg = "(0|{})".format(orgnum)
-        if isinstance(character_id, str) and (character_id[0] == 'c' or character_id[0] == 't'):
+        if isinstance(character_id, str) and (character_id[0] == 'c' or character_id[0] == 'x' or character_id[0] == 't'):
             botnum += " | {}".format(character_id)
         refurls = []
         hitdocs = []
