@@ -260,14 +260,15 @@ class ChatGPTModel(Model):
         botnum = get_bot_id(chatbot_id)
         team_info = '# Team Information\n'
         team_keys = []
+        key_pattern = "sfteam:org:{}:team:*:data".format(orgnum)
+        keys_matched = myredis.redis.keys(key_pattern)
+        for key in keys_matched:
+            team_keys.append(key.decode())
         if team_id > 0:
             team_key = "sfteam:org:{}:team:{}:data".format(orgnum,team_id)
-            team_keys.append(team_key)
-        else:
-            key_pattern = "sfteam:org:{}:team:*:data".format(orgnum)
-            keys_matched = myredis.redis.keys(key_pattern)
-            for key in keys_matched:
-                team_keys.append(key.decode())
+            if team_key in team_keys:
+                team_keys.clear()
+                team_keys.append(team_key)
         for key in team_keys:
             team_desc = myredis.redis.hget(key, 'team_desc').decode()
             team_info += team_desc+'\n'
@@ -301,7 +302,7 @@ class ChatGPTModel(Model):
             )
             reply_content = response.choices[0]['message']['content']
             reply_usage = response['usage']
-            log.info("[CHATGPT] find_teambot: result={} usage={}".format(reply_content,reply_usage))
+            log.info("[CHATGPT] find_teambot: result={} usage={}".format(reply_content,json.dumps(reply_usage)))
             dispatch = json.loads(reply_content)
             return int(dispatch['agent_id']), int(dispatch['team_id'])
         except Exception as e:
