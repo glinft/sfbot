@@ -198,9 +198,9 @@ class ChatGPTModel(Model):
                 teambot_key = "sfteam:org:{}:team:{}:bot:{}".format(orgnum,teamid,teambotid)
                 log.info("[CHATGPT] key={} query={}".format(teambot_key,query))
                 if myredis.redis.exists(teambot_key):
-                    teambot_name = myredis.redis.hget(teambot_key, 'name').decode()
-                    teambot_desc = myredis.redis.hget(teambot_key, 'desc').decode()
-                    teambot_prompt = myredis.redis.hget(teambot_key, 'prompt').decode()
+                    teambot_name = myredis.redis.hget(teambot_key, 'name').decode().strip()
+                    teambot_desc = myredis.redis.hget(teambot_key, 'desc').decode().strip()
+                    teambot_prompt = myredis.redis.hget(teambot_key, 'prompt').decode().strip()
                 else:
                     teammode = 0
             if teammode == 0:
@@ -211,8 +211,8 @@ class ChatGPTModel(Model):
                     f"You are {teambot_name}.\n{teambot_desc}.\n"
                     "You only provide factual answers to queries, and do not try to make up an answer.\n"
                     "Do not try to answer the queries that are irrelevant to your functionality and responsibility, just reject them politely.\n"
-                    "Your functionality and responsibility are described below in markdown format.\n\n"
-                    f"```markdown\n{teambot_prompt}\n```\n"
+                    "Your functionality and responsibility are described below, separated by 3 backticks.\n\n"
+                    f"```\n{teambot_prompt}\n```\n"
                 )
                 character_id = f"x{teambotid}"
                 character_desc = teambot_instruction
