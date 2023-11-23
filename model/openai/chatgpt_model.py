@@ -186,7 +186,6 @@ class ChatGPTModel(Model):
                     else:
                         if teambotid == 0:
                             teammode = 0
-                            teamid = 0
                 else:
                     if teamid == 0 and teambotid > 0:
                         teambot_pattern = "sfteam:org:{}:team:*:bot:{}".format(orgnum,teambotid)
@@ -204,8 +203,9 @@ class ChatGPTModel(Model):
                     teambot_prompt = myredis.redis.hget(teambot_key, 'prompt').decode()
                 else:
                     teammode = 0
-                    teamid = 0
-                    teambotid = 0
+            if teammode == 0:
+                teamid = 0
+                teambotid = 0
             if teammode == 1:
                 teambot_instruction = (
                     f"You are {teambot_name}.\n{teambot_desc}.\n"
