@@ -167,6 +167,10 @@ class ChatGPTModel(Model):
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
+            orgnum = str(get_org_id(from_org_id))
+            botnum = str(get_bot_id(from_chatbot_id))
+            myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+
             teammode = int(context.get('teammode','0'))
             teambotkeep = int(context.get('teambotkeep','0'))
             teamid = int(context.get('teamid','0'))
@@ -182,14 +186,36 @@ class ChatGPTModel(Model):
                     else:
                         if teambotid == 0:
                             teammode = 0
-            if teammode == 1:
-                log.info("[CHATGPT] teambot={}/{} query={}".format(teamid,teambotid,query))
+                else:
+                    if teamid == 0 and teambotid > 0:
+                        teambot_pattern = "sfteam:org:{}:team:*:bot:{}".format(orgnum,teambotid)
+                        keys_matched = myredis.redis.keys(teambot_pattern)
+                        for key in keys_matched:
+                            teambot_key=key.decode()
+                            teamid=int(teambot_key.split(':')[4])
 
-            orgnum = str(get_org_id(from_org_id))
-            botnum = str(get_bot_id(from_chatbot_id))
+            if teammode == 1:
+                teambot_key = "sfteam:org:{}:team:{}:bot:{}".format(orgnum,teamid,teambotid)
+                log.info("[CHATGPT] key={} query={}".format(teambot_key,query))
+                if myredis.redis.exists(teambot_key):
+                    teambot_name = myredis.redis.hget(teambot_key, 'name').decode()
+                    teambot_desc = myredis.redis.hget(teambot_key, 'desc').decode()
+                    teambot_prompt = myredis.redis.hget(teambot_key, 'prompt').decode()
+                else:
+                    teammode = 0
+            if teammode == 1:
+                teambot_instruction = (
+                    f"You are {teambot_name}.\n{teambot_desc}.\n"
+                    "You only provide factual answers to queries, and do not try to make up an answer.\n"
+                    "Your functionality and responsibility are described below in markdown format.\n\n"
+                    f"```markdown\n{teambot_prompt}\n```\n"
+                )
+                character_id = f"t{teambotid}"
+                character_desc = teambot_instruction
+                log.info("[CHATGPT] teambot character id={} desc={}".format(character_id,character_desc))
+
             commands = []
             query_embedding = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
-            myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
             atcs = myredis.ft_search(embedded_query=query_embedding,
                                      vector_field="text_vector",
                                      hybrid_fields=myredis.create_hybrid_field1(orgnum, user_flag, "category", "atc"),
@@ -260,8 +286,8 @@ class ChatGPTModel(Model):
         botnum = get_bot_id(chatbot_id)
         team_info = '# Team Information\n'
         team_keys = []
-        key_pattern = "sfteam:org:{}:team:*:data".format(orgnum)
-        keys_matched = myredis.redis.keys(key_pattern)
+        team_pattern = "sfteam:org:{}:team:*:data".format(orgnum)
+        keys_matched = myredis.redis.keys(team_pattern)
         for key in keys_matched:
             team_keys.append(key.decode())
         if team_id > 0:
@@ -339,7 +365,7 @@ class ChatGPTModel(Model):
             prompt_tokens = response['usage']['prompt_tokens']
             completion_tokens = response['usage']['completion_tokens']
             log.debug(response)
-            log.info("[CHATGPT] usage={}", response['usage'])
+            log.info("[CHATGPT] usage={}", json.dumps(response['usage']))
             log.info("[CHATGPT] reply={}", reply_content)
             logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
             return reply_content, logid
@@ -742,7 +768,7 @@ class Session(object):
         # log.info("[HISTORY] request: {}".format(xquery))
         gqldata = { "query": xquery, "variables": {}, }
         gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
-        log.info("[HISTORY] response: {} {}".format(gqlresp.status_code, gqlresp.text))
+        log.info("[HISTORY] response: {} {}".format(gqlresp.status_code, gqlresp.text.strip()))
         if gqlresp.status_code != 200:
             return None
         chatlog = json.loads(gqlresp.text)
