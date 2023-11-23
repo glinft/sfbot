@@ -203,6 +203,8 @@ class ChatGPTModel(Model):
                     teambot_prompt = myredis.redis.hget(teambot_key, 'prompt').decode()
                 else:
                     teammode = 0
+                    teamid = 0
+                    teambotid = 0
             if teammode == 1:
                 teambot_instruction = (
                     f"You are {teambot_name}.\n{teambot_desc}.\n"
@@ -272,7 +274,7 @@ class ChatGPTModel(Model):
                 reply_content = Session.insert_resource_to_reply(reply_content, from_user_id, from_org_id)
             reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
             reply_content+='\n```sf-json\n'
-            reply_content+=json.dumps({'docs':hitdocs,'pages':refurls,'resources':resources,'commands':commands,'score':score,'logid':logid})
+            reply_content+=json.dumps({'docs':hitdocs,'pages':refurls,'resources':resources,'commands':commands,'score':score,'logid':logid,'teammode':teammode,'teamid':teamid,'teambotid':teambotid})
             reply_content+='\n```\n'
             #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, reply_content))
             return reply_content
@@ -596,7 +598,7 @@ class Session(object):
         orgnum = get_org_id(org_id)
         botnum = str(get_bot_id(chatbot_id))
         qnaorg = "(0|{})".format(orgnum)
-        if isinstance(character_id, str) and character_id[0] == 'c':
+        if isinstance(character_id, str) and (character_id[0] == 'c' or character_id[0] == 't'):
             botnum += " | {}".format(character_id)
         refurls = []
         hitdocs = []

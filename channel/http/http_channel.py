@@ -50,6 +50,9 @@ async def return_stream(data):
                         'pages': extra.get('pages',[]),
                         'resources': extra.get('resources',[]),
                         'commands': extra.get('commands',[]),
+                        'teammode': extra.get('teammode',None),
+                        'teamid': extra.get('teamid',None),
+                        'teambotid': extra.get('teambotid',None),
                         'logid': extra.get('logid',None),
                         'final': final,
                     }, request.sid, namespace="/sfbot/chat")
@@ -62,6 +65,9 @@ async def return_stream(data):
                         'pages': extra.get('pages',[]),
                         'resources': extra.get('resources',[]),
                         'commands': extra.get('commands',[]),
+                        'teammode': extra.get('teammode',None),
+                        'teamid': extra.get('teamid',None),
+                        'teambotid': extra.get('teambotid',None),
                         'logid': extra.get('logid',None),
                         'final': final,
                     }, request.sid, namespace="/sfbot/chat")
@@ -127,6 +133,9 @@ def chat():
                 'resources': extra.get('resources',[]),
                 'commands': extra.get('commands',[]),
                 'score': extra.get('score',None),
+                'teammode': extra.get('teammode',None),
+                'teamid': extra.get('teamid',None),
+                'teambotid': extra.get('teambotid',None),
                 'logid': extra.get('logid',None)}
 
 
