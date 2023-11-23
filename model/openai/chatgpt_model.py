@@ -256,13 +256,15 @@ class ChatGPTModel(Model):
 
     def find_teambot(self, user_id, org_id, chatbot_id, team_id, query):
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+        orgnum = get_org_id(org_id)
+        botnum = get_bot_id(chatbot_id)
         team_info = '# Team Information\n'
         team_keys = []
         if team_id > 0:
-            team_key = "sfteam:org:{}:team:{}:data".format(org_id,team_id)
+            team_key = "sfteam:org:{}:team:{}:data".format(orgnum,team_id)
             team_keys.append(team_key)
         else:
-            key_pattern = "sfteam:org:{}:team:*:data".format(org_id)
+            key_pattern = "sfteam:org:{}:team:*:data".format(orgnum)
             keys_matched = myredis.redis.keys(key_pattern)
             for key in keys_matched:
                 team_keys.append(key.decode())
