@@ -179,7 +179,7 @@ class ChatGPTModel(Model):
                 if teambotkeep == 1 and teambotid == 0:
                     teambotkeep = 0
                 if teambotkeep == 0:
-                    newteambot, newteam = self.find_teambot(from_user_id, from_org_id, from_chatbot_id, teamid, query)
+                    newteambot, newteam = self.find_teambot(user_flag, from_org_id, from_chatbot_id, teamid, query)
                     if newteambot > 0:
                         teamid = newteam
                         teambotid = newteambot
@@ -284,7 +284,7 @@ class ChatGPTModel(Model):
         elif context.get('type', None) == 'IMAGE_CREATE':
             return self.create_img(query, 0)
 
-    def find_teambot(self, user_id, org_id, chatbot_id, team_id, query):
+    def find_teambot(self, user_flag, org_id, chatbot_id, team_id, query):
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         orgnum = get_org_id(org_id)
         botnum = get_bot_id(chatbot_id)
@@ -301,7 +301,15 @@ class ChatGPTModel(Model):
                 team_keys.append(team_key)
         for key in team_keys:
             team_desc = myredis.redis.hget(key, 'team_desc').decode()
-            team_info += team_desc+'\n'
+            team_publ = 1
+            fpub = myredis.redis.hget(key, 'public')
+            if fpub is not None:
+                team_publ = int(fpub.decode())
+            if team_publ == 1:
+                team_info += team_desc+'\n'
+            else:
+                if user_flag == 'internal':
+                    team_info += team_desc+'\n'
         sys_msg = (
             "You are a contact-center manager, and you try to dispatch the user query to the most suitable team/agent.\n"
             "You only provide factual answers to queries, and do not try to make up an answer.\n"
