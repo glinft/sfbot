@@ -310,6 +310,9 @@ class ChatGPTModel(Model):
             else:
                 if user_flag == 'internal':
                     team_info += team_desc+'\n'
+        if len(team_info) < 20:
+            log.info("[CHATGPT] find_teambot: No available team {}/{}".format(org_id,user_flag))
+            return 0, 0
         sys_msg = (
             "You are a contact-center manager, and you try to dispatch the user query to the most suitable team/agent.\n"
             "You only provide factual answers to queries, and do not try to make up an answer.\n"
