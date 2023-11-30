@@ -97,9 +97,12 @@ def increase_hit_count(fid, category, url=''):
     headers = { "Content-Type": "application/json", }
     query = f"mutation {gqlfunc} {{ {gqlfunc}( id:{fid}, category:\"{category}\", url:\"{url}\" ) }}"
     gqldata = { "query": query, "variables": {}, }
-    gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
-    log.info(f"GQL/{gqlfunc}: #{fid} {gqlresp.status_code} {query}")
-    log.debug(f"GQL/{gqlfunc}: #{fid} {gqlresp.json()}")
+    try:
+        gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
+        log.info(f"GQL/{gqlfunc}: #{fid} {gqlresp.status_code} {query}")
+        log.debug(f"GQL/{gqlfunc}: #{fid} {gqlresp.json()}")
+    except Exception as e:
+        log.exception(e)
 
 def send_query_notification(rid, str1, str2):
     gqlurl = 'http://127.0.0.1:5000/graphql'
@@ -109,9 +112,12 @@ def send_query_notification(rid, str1, str2):
     content = base64.b64encode(chatstr.encode('utf-8')).decode('utf-8')
     query = f"mutation {gqlfunc} {{ {gqlfunc}( id:{rid}, content:\"{content}\" ) }}"
     gqldata = { "query": query, "variables": {}, }
-    gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
-    log.info(f"GQL/{gqlfunc}: #{rid} {gqlresp.status_code} {query}")
-    log.debug(f"GQL/{gqlfunc}: #{rid} {gqlresp.json()}")
+    try:
+        gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
+        log.info(f"GQL/{gqlfunc}: #{rid} {gqlresp.status_code} {query}")
+        log.debug(f"GQL/{gqlfunc}: #{rid} {gqlresp.json()}")
+    except Exception as e:
+        log.exception(e)
 
 def run_word_filter(text, org_id):
     wftool = WordFilter()
@@ -781,14 +787,17 @@ class Session(object):
         question = base64.b64encode(query.encode('utf-8')).decode('utf-8')
         answer = base64.b64encode(answer.encode('utf-8')).decode('utf-8')
         xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgnum},sfbotId:{botnum},question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
-        # log.info("[HISTORY] request: {}".format(xquery))
         gqldata = { "query": xquery, "variables": {}, }
-        gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
-        log.info("[HISTORY] response: {} {}".format(gqlresp.status_code, gqlresp.text.strip()))
-        if gqlresp.status_code != 200:
+        try:
+            gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
+            log.info("[HISTORY] response: {} {}".format(gqlresp.status_code, gqlresp.text.strip()))
+            if gqlresp.status_code != 200:
+                return None
+            chatlog = json.loads(gqlresp.text)
+            return chatlog['data']['createChatHistory']['id']
+        except Exception as e:
+            log.exception(e)
             return None
-        chatlog = json.loads(gqlresp.text)
-        return chatlog['data']['createChatHistory']['id']
 
     @staticmethod
     def clear_session(user_id):
