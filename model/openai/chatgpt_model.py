@@ -706,7 +706,10 @@ class Session(object):
                     fct = dockeyparts[1]
                     fid = dockeyparts[2]
                     if fct == 'file':
-                        hitdocs.append({'id':fid,'category':fct,'url':urlhit,'key':f"{fid};{urlhit}"})
+                        dfname = myredis.redis.hget(doc.id, 'filename')
+                        if dfname is not None:
+                            dfname = dfname.decode()
+                        hitdocs.append({'id':fid,'category':fct,'url':urlhit,'filename':dfname,'key':f"{fid};{urlhit}"})
             if float(doc.vector_score) < 0.2:
                 docurl = myredis.redis.hget(doc.id, 'source')
                 if docurl is None:
