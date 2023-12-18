@@ -166,8 +166,8 @@ class ChatGPTModel(Model):
             temperature = context['temperature']
             website = context.get('website','undef')
             email = context.get('email','undef')
-            sfmodel = context.get('model','undef')
-            if isinstance(sfmodel, str) and (sfmodel == 'undef' or len(sfmodel.strip()) == 0):
+            sfmodel = context.get('sfmodel','undef')
+            if isinstance(sfmodel, str) and (sfmodel == 'undef' or sfmodel == ''):
                 sfmodel = None
 
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
@@ -443,8 +443,8 @@ class ChatGPTModel(Model):
             temperature = context['temperature']
             website = context.get('website','undef')
             email = context.get('email','undef')
-            sfmodel = context.get('model','undef')
-            if isinstance(sfmodel, str) and (sfmodel == 'undef' or len(sfmodel.strip()) == 0):
+            sfmodel = context.get('sfmodel','undef')
+            if isinstance(sfmodel, str) and (sfmodel == 'undef' or sfmodel == ''):
                 sfmodel = None
             new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
             if new_query is None:
