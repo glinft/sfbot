@@ -161,6 +161,7 @@ def handle_sms():
         data['orgid'] = orgid
         data['res'] = '0'
         data['userflag'] = 'external'
+        data['model'] = 'undef'
         data['character_desc'] = 'undef'
         data['temperature'] = 'undef'
         reply_text = HttpChannel().handle(data=data)
@@ -239,6 +240,8 @@ class HttpChannel(Channel):
         context['fwd'] = str(fwd)
         userflag = data.get("userflag", 'external')
         context['userflag'] = str(userflag)
+        model = data.get("model", 'undef')
+        context['model'] = str(model)
         character_id = data.get("character_id")
         if character_id is not None:
             context['character_id'] = 'c'+str(character_id)
@@ -281,6 +284,8 @@ class HttpChannel(Channel):
         context['fwd'] = str(fwd)
         userflag = data.get("userflag", 'external')
         context['userflag'] = str(userflag)
+        model = data.get("model", 'undef')
+        context['model'] = str(model)
         character_id = data.get("character_id")
         if character_id is not None:
             context['character_id'] = 'c'+str(character_id)

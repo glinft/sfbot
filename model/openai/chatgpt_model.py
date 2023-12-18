@@ -166,6 +166,9 @@ class ChatGPTModel(Model):
             temperature = context['temperature']
             website = context.get('website','undef')
             email = context.get('email','undef')
+            sfmodel = context.get('model','undef')
+            if sfmodel == 'undef' or len(sfmodel.strip()) == 0:
+                sfmodel = None
 
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
             if query in clear_memory_commands:
@@ -207,6 +210,7 @@ class ChatGPTModel(Model):
                     teambot_name = myredis.redis.hget(teambot_key, 'name').decode().strip()
                     teambot_desc = myredis.redis.hget(teambot_key, 'desc').decode().strip()
                     teambot_prompt = myredis.redis.hget(teambot_key, 'prompt').decode().strip()
+                    teambot_model = myredis.redis.hget(teambot_key, 'model')
                 else:
                     teammode = 0
             if teammode == 0:
@@ -223,6 +227,13 @@ class ChatGPTModel(Model):
                 character_id = f"x{teambotid}"
                 character_desc = teambot_instruction
                 log.info("[CHATGPT] teambot character id={} desc={}".format(character_id,character_desc))
+                if sfmodel is None and teambot_model is not None:
+                    sfmodel = teambot_model.decode().strip()
+            else:
+                sfbot_key = "sfbot:org:{}:bot:{}".format(orgnum,botnum)
+                sfbot_model = myredis.redis.hget(sfbot_key, 'model')
+                if sfmodel is None and sfbot_model is not None:
+                    sfmodel = sfbot_model.decode().strip()
 
             commands = []
             query_embedding = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
@@ -257,7 +268,7 @@ class ChatGPTModel(Model):
             #     # reply in stream
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
-            reply_content, logid = self.reply_text(new_query, query, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, use_faiss, 0)
+            reply_content, logid = self.reply_text(new_query, query, sfmodel, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, use_faiss, 0)
             reply_embedding = openai.Embedding.create(input=reply_content, model="text-embedding-ada-002")["data"][0]['embedding']
             docs = myredis.ft_search(embedded_query=reply_embedding,
                                      vector_field="text_vector",
@@ -356,7 +367,7 @@ class ChatGPTModel(Model):
             log.exception(e)
             return 0, 0
 
-    def reply_text(self, query, qtext, user_id, org_id, chatbot_id, similarity, temperature, use_faiss=False, retry_count=0):
+    def reply_text(self, query, qtext, qmodel, user_id, org_id, chatbot_id, similarity, temperature, use_faiss=False, retry_count=0):
         try:
             try:
                 temperature = float(temperature)
@@ -373,7 +384,7 @@ class ChatGPTModel(Model):
                 api_type=("azure" if use_azure else None),
                 api_version=("2023-05-15" if use_azure else None),
                 engine=("base" if use_azure else None), # Azure deployment Name
-                model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
+                model=qmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
                 messages=query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
@@ -396,7 +407,7 @@ class ChatGPTModel(Model):
             if retry_count < 1:
                 time.sleep(5)
                 log.warn("[CHATGPT] RateLimit exceed, retry {} attempts".format(retry_count+1))
-                return self.reply_text(query, qtext, user_id, org_id, chatbot_id, similarity, temperature, use_faiss, retry_count+1)
+                return self.reply_text(query, qtext, qmodel, user_id, org_id, chatbot_id, similarity, temperature, use_faiss, retry_count+1)
             else:
                 return "You're asking too quickly, please take a break before asking me again.", None
         except openai.error.APIConnectionError as e:
@@ -432,6 +443,9 @@ class ChatGPTModel(Model):
             temperature = context['temperature']
             website = context.get('website','undef')
             email = context.get('email','undef')
+            sfmodel = context.get('model','undef')
+            if sfmodel == 'undef' or len(sfmodel.strip()) == 0:
+                sfmodel = None
             new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
@@ -454,8 +468,16 @@ class ChatGPTModel(Model):
             except ValueError:
                 temperature = model_conf(const.OPEN_AI).get("temperature", 0.75)
 
+            orgnum = str(get_org_id(from_org_id))
+            botnum = str(get_bot_id(from_chatbot_id))
+            myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+            sfbot_key = "sfbot:org:{}:bot:{}".format(orgnum,botnum)
+            sfbot_model = myredis.redis.hget(sfbot_key, 'model')
+            if sfmodel is None and sfbot_model is not None:
+                sfmodel = sfbot_model.decode().strip()
+
             res = openai.ChatCompletion.create(
-                model= model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
+                model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
                 messages=new_query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
@@ -651,11 +673,12 @@ class Session(object):
                 docs = []
 
         system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
-        org_char_desc = myredis.redis.hget('sfbot:'+org_id, 'character_desc')
-        if org_char_desc is not None:
-            org_char_desc = org_char_desc.decode()
-            if len(org_char_desc) > 0:
-                system_prompt = org_char_desc
+        sfbot_key = "sfbot:org:{}:bot:{}".format(orgnum,botnum)
+        sfbot_char_desc = myredis.redis.hget(sfbot_key, 'character_desc')
+        if sfbot_char_desc is not None:
+            sfbot_char_desc = sfbot_char_desc.decode()
+            if len(sfbot_char_desc) > 0:
+                system_prompt = sfbot_char_desc
         if isinstance(character_desc, str) and character_desc != 'undef' and len(character_desc) > 0:
             system_prompt = character_desc
 
@@ -773,7 +796,7 @@ class Session(object):
 
         if used_tokens > 0:
             myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
-            botkey = 'sfbot:'+org_id+':'+chatbot_id
+            botkey = "sfbot:{}:{}".format(org_id,chatbot_id)
             momkey = 'stat_'+datetime.now().strftime("%Y%m")
             momqty = myredis.redis.hget(botkey, momkey)
             if momqty is None:
