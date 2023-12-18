@@ -636,8 +636,8 @@ class Session(object):
             return session, [], [], similarity, True
 
         orgnum = get_org_id(org_id)
-        botnum = str(get_bot_id(chatbot_id))
         qnaorg = "(0|{})".format(orgnum)
+        botnum = str(get_bot_id(chatbot_id))
         if isinstance(character_id, str) and (character_id[0] == 'c' or character_id[0] == 'x' or character_id[0] == 't'):
             botnum += " | {}".format(character_id)
         refurls = []
@@ -673,6 +673,8 @@ class Session(object):
                 docs = []
 
         system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
+        orgnum = str(get_org_id(org_id))
+        botnum = str(get_bot_id(chatbot_id))
         sfbot_key = "sfbot:org:{}:bot:{}".format(orgnum,botnum)
         sfbot_char_desc = myredis.redis.hget(sfbot_key, 'character_desc')
         if sfbot_char_desc is not None:
