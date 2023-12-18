@@ -167,7 +167,7 @@ class ChatGPTModel(Model):
             website = context.get('website','undef')
             email = context.get('email','undef')
             sfmodel = context.get('model','undef')
-            if sfmodel == 'undef' or len(sfmodel.strip()) == 0:
+            if isinstance(sfmodel, str) and (sfmodel == 'undef' or len(sfmodel.strip()) == 0):
                 sfmodel = None
 
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
@@ -444,7 +444,7 @@ class ChatGPTModel(Model):
             website = context.get('website','undef')
             email = context.get('email','undef')
             sfmodel = context.get('model','undef')
-            if sfmodel == 'undef' or len(sfmodel.strip()) == 0:
+            if isinstance(sfmodel, str) and (sfmodel == 'undef' or len(sfmodel.strip()) == 0):
                 sfmodel = None
             new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
             if new_query is None:
