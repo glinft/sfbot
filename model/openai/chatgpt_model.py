@@ -176,6 +176,7 @@ class ChatGPTModel(Model):
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
+            query_embedding = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
             orgnum = str(get_org_id(from_org_id))
             botnum = str(get_bot_id(from_chatbot_id))
             myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
@@ -185,6 +186,14 @@ class ChatGPTModel(Model):
             teamid = int(context.get('teamid','0'))
             teambotid = int(context.get('teambotid','0'))
             if teammode == 1:
+                if teambotkeep == 2:
+                    teambotkeep = 1
+                    starter = myredis.ft_search(embedded_query=query_embedding,
+                                                vector_field="text_vector",
+                                                hybrid_fields=myredis.create_hybrid_field1(orgnum, user_flag, "category", "starter"),
+                                                k=1)
+                    if len(starter) > 0 and float(starter[0].vector_score) < 0.15:
+                        teambotid = int(myredis.redis.hget(starter[0].id, 'teambotid').decode())
                 if teambotkeep == 1 and teambotid == 0:
                     teambotkeep = 0
                 if teambotkeep == 0:
@@ -236,7 +245,6 @@ class ChatGPTModel(Model):
                     sfmodel = sfbot_model.decode().strip()
 
             commands = []
-            query_embedding = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
             atcs = myredis.ft_search(embedded_query=query_embedding,
                                      vector_field="text_vector",
                                      hybrid_fields=myredis.create_hybrid_field1(orgnum, user_flag, "category", "atc"),
