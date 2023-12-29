@@ -360,7 +360,7 @@ class ChatGPTModel(Model):
                 api_type=("azure" if use_azure else None),
                 api_version=("2023-05-15" if use_azure else None),
                 engine=("base" if use_azure else None),
-                model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",
+                model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",
                 messages=msgs,
                 temperature=0.1,
                 frequency_penalty=0.0,
@@ -392,7 +392,7 @@ class ChatGPTModel(Model):
                 api_type=("azure" if use_azure else None),
                 api_version=("2023-05-15" if use_azure else None),
                 engine=("base" if use_azure else None), # Azure deployment Name
-                model=qmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
+                model=qmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",  # 对话模型的名称
                 messages=query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
@@ -485,7 +485,7 @@ class ChatGPTModel(Model):
                 sfmodel = sfbot_model.decode().strip()
 
             res = openai.ChatCompletion.create(
-                model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo",  # 对话模型的名称
+                model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",  # 对话模型的名称
                 messages=new_query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
