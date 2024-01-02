@@ -220,6 +220,13 @@ class ChatGPTModel(Model):
                     teambot_desc = myredis.redis.hget(teambot_key, 'desc').decode().strip()
                     teambot_prompt = myredis.redis.hget(teambot_key, 'prompt').decode().strip()
                     teambot_model = myredis.redis.hget(teambot_key, 'model')
+                    teambot_nokb = myredis.redis.hget(teambot_key, 'nokb')
+                    if teambot_nokb is not None:
+                        teambot_nokb = int(teambot_nokb.decode().strip())
+                    else:
+                        teambot_nokb = 0
+                    if teambot_nokb > 0:
+                        fwd = 1
                 else:
                     teammode = 0
             if teammode == 0:
