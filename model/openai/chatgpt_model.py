@@ -628,7 +628,7 @@ class Session(object):
             if isinstance(character_desc, str) and character_desc != 'undef' and len(character_desc) > 0:
                 system_prompt = character_desc
             system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
-            system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
+            # system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
             system_prompt += '\nIf you are unclear about the question, politely respond that you need a clearer and more detailed description.'
             system_prompt += f"\n{config_prompt}\n```"
             for doc, score in docs:
