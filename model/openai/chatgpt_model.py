@@ -25,6 +25,10 @@ user_session = dict()
 md5sum_pattern = r'^[0-9a-f]{32}$'
 faiss_store_root= "/opt/faiss/"
 
+def is_valid_uuid(uuidstr):
+    pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    return bool(re.match(pattern, uuidstr, re.IGNORECASE))
+
 def calculate_md5(text):
     md5_hash = hashlib.md5()
     md5_hash.update(text.encode('utf-8'))
@@ -162,6 +166,7 @@ class ChatGPTModel(Model):
             from_org_id = context['from_org_id']
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
+            user_uuid = context.get('userid','undef')
             nres = int(context.get('res','0'))
             fwd = int(context.get('fwd','0'))
             character_id = context.get('character_id')
@@ -170,6 +175,8 @@ class ChatGPTModel(Model):
             website = context.get('website','undef')
             email = context.get('email','undef')
             sfmodel = context.get('sfmodel','undef')
+            if not is_valid_uuid(user_uuid):
+                user_uuid = None
             if not (isinstance(sfmodel, str) and sfmodel.startswith('ft:')):
                 sfmodel = None
 
@@ -267,7 +274,7 @@ class ChatGPTModel(Model):
                     csf = 1.0 - float(atc.vector_score)
                     commands.append({'id':cid,'category':"actionTransformer",'score':csf})
 
-            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
+            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_uuid, website, email, fwd)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
@@ -454,6 +461,7 @@ class ChatGPTModel(Model):
             from_org_id = context['from_org_id']
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
+            user_uuid = context.get('userid','undef')
             nres = int(context.get('res','0'))
             fwd = int(context.get('fwd','0'))
             character_id = context.get('character_id')
@@ -462,9 +470,11 @@ class ChatGPTModel(Model):
             website = context.get('website','undef')
             email = context.get('email','undef')
             sfmodel = context.get('sfmodel','undef')
-            if isinstance(sfmodel, str) and (sfmodel == 'undef' or sfmodel == ''):
+            if not is_valid_uuid(user_uuid):
+                user_uuid = None
+            if not (isinstance(sfmodel, str) and sfmodel.startswith('ft:')):
                 sfmodel = None
-            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, website, email, fwd)
+            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_uuid, website, email, fwd)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
@@ -583,7 +593,7 @@ class ChatGPTModel(Model):
 
 class Session(object):
     @staticmethod
-    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc=None, character_id=None, website=None, email=None, fwd=0):
+    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc=None, character_id=None, user_uuid=None, website=None, email=None, fwd=0):
         '''
         build query with conversation history
         e.g.  [
