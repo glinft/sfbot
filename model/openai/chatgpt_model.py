@@ -154,6 +154,9 @@ class ChatGPTModel(Model):
     def reply(self, query, context=None):
         # acquire reply content
         if not context or not context.get('type') or context.get('type') == 'TEXT':
+            cargs = context
+            cargs['character_desc'] = None
+            log.info("[CHATGPT] cargs={}".format(cargs))
             log.info("[CHATGPT] query={}".format(query))
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
@@ -167,7 +170,7 @@ class ChatGPTModel(Model):
             website = context.get('website','undef')
             email = context.get('email','undef')
             sfmodel = context.get('sfmodel','undef')
-            if isinstance(sfmodel, str) and (sfmodel == 'undef' or sfmodel == ''):
+            if not (isinstance(sfmodel, str) and sfmodel.startswith('ft:')):
                 sfmodel = None
 
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
