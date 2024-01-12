@@ -162,9 +162,6 @@ def get_plaid_transactions_data(user_id, start_date, end_date):
     sfresp = requests.post(url, json=payload)
     if sfresp.status_code==200:
         txresp = json.loads(sfresp.text)
-        with open('./plaidtx.json', 'r') as file:
-            txresp = json.load(file)
-        print(txresp)
         txdata = txresp["Transactions"]
         if len(txdata["transactions"])==0:
             return "Transactions: NO DATA\n\n"
@@ -882,9 +879,9 @@ class Session(object):
                     urlmeta = json.loads(myredis.redis.lindex(urlkey, 0).decode())
                     urltitle = urlmeta['title']
                 except json.JSONDecodeError as e:
-                    print("Error decoding JSON:", urlkey, str(e))
+                    log.info("Error decoding JSON: {} {}".format(urlkey, str(e)))
                 except Exception as e:
-                    print("Error URL:", urlkey, str(e))
+                    log.info("Error URL: {} {}".format(urlkey, str(e)))
                 log.info(f"{i}) {doc.id} URL={docurl} Title={urltitle}")
                 refurls.append({'url': docurl, 'title': urltitle})
         system_prompt += '\n```\n'
