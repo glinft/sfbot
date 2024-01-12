@@ -132,6 +132,83 @@ def run_word_filter(text, org_id):
     filted_text = wftool.replace_sensitive_words(text, wfdict)
     return filted_text
 
+def get_plaid_balance_data(user_id):
+    url = f"https://api.sflow.io/plaid/api/balance_data/{user_id}"
+    payload = {}
+    sfresp = requests.post(url, json=payload)
+    if sfresp.status_code==200:
+        blresp = json.loads(sfresp.text)
+        bldata = blresp["Balance"]
+        if len(bldata["accounts"])==0:
+            return "Accounts: NO DATA\n\n"
+        result = ""
+        for idx,acc in enumerate(bldata["accounts"], start=1):
+            result += f"Account {idx}:\n"
+            result += f"- Name: {acc['name']}\n"
+            result += f"- Official Name: {acc['official_name']}\n"
+            result += f"- Type: {acc['type']}\n"
+            result += f"- Subtype: {acc['subtype']}\n"
+            result += f"- Balances: "
+            result += f"Available={acc['balances']['available']}, "
+            result += f"Current={acc['balances']['current']}, "
+            result += f"CurrencyCode={acc['balances']['iso_currency_code']}, "
+            result += f"Limit={acc['balances']['limit']}\n\n"
+        return result
+    return "Accounts: NO DATA\n\n"
+
+def get_plaid_transactions_data(user_id, start_date, end_date):
+    url = f"https://api.sflow.io/plaid/api/transactions_data/{user_id}"
+    payload = {'start_date': start_date, 'end_date': end_date}
+    sfresp = requests.post(url, json=payload)
+    if sfresp.status_code==200:
+        txresp = json.loads(sfresp.text)
+        with open('./plaidtx.json', 'r') as file:
+            txresp = json.load(file)
+        print(txresp)
+        txdata = txresp["Transactions"]
+        if len(txdata["transactions"])==0:
+            return "Transactions: NO DATA\n\n"
+        result = ""
+        for idx,txn in enumerate(txdata["transactions"], start=1):
+            result += f"Transaction {idx}:\n"
+            result += f"- Datetime: {txn['datetime']}\n"
+            result += f"- Amount: {txn['amount']}\n"
+            result += f"- CurrencyCode: {txn['iso_currency_code']}\n"
+            result += f"- Category: {', '.join(txn['category'])}\n"
+            result += f"- Name: {txn['name']}\n"
+            result += f"- MerchantName: {txn['merchant_name']}\n"
+            result += f"- PaymentChannel: {txn['payment_channel']}\n"
+            result += f"- Type: {txn['transaction_type']}\n\n"
+        return result
+    return "Transactions: NO DATA\n\n"
+
+plaid_funcs = { "get_plaid_balance_data": get_plaid_balance_data, "get_plaid_transactions_data": get_plaid_transactions_data, }
+plaid_tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_plaid_balance_data",
+            "description": "Inquire about the current account balance from Plaid.",
+            "parameters": { "type": "object", "properties": {}, "required": [], },
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_plaid_transactions_data",
+            "description": "Retrieve transaction data within the start date and end date from Plaid.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_date": { "type": "string", "description": "The start date, e.g. 2024-01-01", },
+                    "end_date": { "type": "string", "description": "The end date, e.g. 2024-01-07", },
+                },
+                "required": ["start_date", "end_date"],
+            },
+        }
+    },
+]
+
 # OpenAI对话模型API (可用)
 class ChatGPTModel(Model):
     def __init__(self):
@@ -190,6 +267,34 @@ class ChatGPTModel(Model):
             orgnum = str(get_org_id(from_org_id))
             botnum = str(get_bot_id(from_chatbot_id))
             myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
+
+            if user_uuid:
+                plaid_msgs = [
+                    {'role':'system', 'content':"You are an agent of Plaid, a digital financial service provider, and you try to handle the query about accounts or transactions."},
+                    {"role":"user", "content":"Today is "+datetime.now().strftime("%Y-%m-%d")+". "+query}
+                ]
+                plaid_qcmp = openai.ChatCompletion.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs, tools=plaid_tools, tool_choice="auto",)
+                plaid_qrsp = plaid_qcmp["choices"][0]["message"]
+                if plaid_qrsp.get("tool_calls"):
+                    plaid_msgs.append(plaid_qrsp)
+                    for tc in plaid_qrsp.get("tool_calls"):
+                        if tc["type"]=="function":
+                            function_name=tc["function"]["name"]
+                            function_args = json.loads(tc["function"]["arguments"])
+                            function_args["user_id"] = user_uuid
+                            function_tocall = plaid_funcs[function_name]
+                            function_output = function_tocall(**function_args)
+                            plaid_msgs.append({"tool_call_id":tc["id"], "role":"tool", "name":function_name, "content":function_output})
+                    plaid_fcmp = openai.ChatCompletion.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs,)
+                    reply_content = plaid_fcmp["choices"][0]["message"]["content"]
+                    used_tokens = plaid_fcmp["usage"]["total_tokens"]
+                    prompt_tokens = plaid_fcmp["usage"]["prompt_tokens"]
+                    completion_tokens = plaid_fcmp["usage"]["completion_tokens"]
+                    logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, used_tokens, prompt_tokens, completion_tokens)
+                    reply_content+='\n```sf-json\n'
+                    reply_content+=json.dumps({'logid':logid})
+                    reply_content+='\n```\n'
+                    return reply_content
 
             teammode = int(context.get('teammode','0'))
             teambotkeep = int(context.get('teambotkeep','0'))

@@ -261,7 +261,7 @@ class HttpChannel(Channel):
         context['teamid'] = str(teamid)
         teambotid = data.get("teambotid", 0)
         context['teambotid'] = str(teambotid)
-        userid = data.get("userid", 0)
+        userid = data.get("userid", 'undef')
         context['userid'] = str(userid)
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
             'channel': self, 'context': query,  "args": context}))
@@ -307,7 +307,7 @@ class HttpChannel(Channel):
         context['teamid'] = str(teamid)
         teambotid = data.get("teambotid", 0)
         context['teambotid'] = str(teambotid)
-        userid = data.get("userid", 0)
+        userid = data.get("userid", 'undef')
         context['userid'] = str(userid)
         context['stream'] = True
         context['origin'] = query
