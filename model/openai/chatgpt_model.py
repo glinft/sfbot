@@ -16,10 +16,11 @@ import requests
 import base64
 import random
 import hashlib
+import openai
 import tiktoken
 from datetime import datetime
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
 from urllib.parse import urlparse, urlunparse
 
 client = OpenAI(
@@ -492,7 +493,7 @@ class ChatGPTModel(Model):
                 )
             reply_content = response.choices[0].message.content
             reply_usage = response.usage
-            log.info("[CHATGPT] find_teambot: result={} usage={}".format(reply_content,json.dumps(reply_usage)))
+            log.info("[CHATGPT] find_teambot: result={} usage={}".format(reply_content,reply_usage))
             dispatch = json.loads(reply_content)
             return int(dispatch['agent_id']), int(dispatch['team_id'])
         except Exception as e:
@@ -533,7 +534,7 @@ class ChatGPTModel(Model):
             prompt_tokens = response.usage.prompt_tokens
             completion_tokens = response.usage.completion_tokens
             log.debug(response)
-            log.info("[CHATGPT] usage={}", json.dumps(response.usage))
+            log.info("[CHATGPT] usage={}", response.usage)
             log.info("[CHATGPT] reply={}", reply_content)
             logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
             return reply_content, logid
