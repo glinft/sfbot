@@ -112,11 +112,11 @@ class OpenAIModel(Model):
                 yield True, self.reply_text_stream(query, user_id, retry_count+1)
             else:
                 yield True, "提问太快啦，请休息一下再问我吧"
-        except openai.error.APIConnectionError as e:
+        except openai.APIConnectionError as e:
             log.warn(e)
             log.warn("[CHATGPT] APIConnection failed")
             yield True, "我连接不到网络，请稍后重试"
-        except openai.error.Timeout as e:
+        except openai.APITimeoutError as e:
             log.warn(e)
             log.warn("[CHATGPT] Timeout")
             yield True, "我没有收到消息，请稍后重试"
