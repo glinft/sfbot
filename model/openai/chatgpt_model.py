@@ -6,7 +6,8 @@ from common import const
 from common import log
 from common.redis import RedisSingleton
 from common.word_filter import WordFilter
-import openai
+from openai import OpenAI
+from openai import AzureOpenAI
 import os
 import time
 import json
@@ -21,6 +22,15 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from urllib.parse import urlparse, urlunparse
 
+client = OpenAI(
+    base_url=model_conf(const.OPEN_AI).get('api_base'),
+    api_key=model_conf(const.OPEN_AI).get('api_key'),
+)
+azurec = AzureOpenAI(
+    azure_endpoint=model_conf(const.OPEN_AI).get('azure_api_base'),
+    api_key=model_conf(const.OPEN_AI).get('azure_api_key'),
+    api_version="2023-05-15",
+)
 user_session = dict()
 md5sum_pattern = r'^[0-9a-f]{32}$'
 faiss_store_root= "/opt/faiss/"
@@ -209,25 +219,16 @@ plaid_tools = [
 # OpenAI对话模型API (可用)
 class ChatGPTModel(Model):
     def __init__(self):
-        openai.api_key = model_conf(const.OPEN_AI).get('api_key')
         api_base = model_conf(const.OPEN_AI).get('api_base')
-        if api_base:
-            openai.api_base = api_base
-        proxy = model_conf(const.OPEN_AI).get('proxy')
-        if proxy:
-            openai.proxy = proxy
-        log.info("[CHATGPT] api_base={} proxy={}".format(
-            api_base, proxy))
+        log.info("[CHATGPT] api_base={}".format(api_base))
+        azure_api_base = model_conf(const.OPEN_AI).get('azure_api_base')
+        log.info("[CHATGPT] azure_api_base={}".format(azure_api_base))
 
     def select_gpt_service(self, vendor='default'):
         if vendor == 'azure':
-            openai.api_key = model_conf(const.OPEN_AI).get('azure_api_key')
-            openai.api_base = model_conf(const.OPEN_AI).get('azure_api_base')
-            openai.api_type = 'azure'
-            openai.api_version = '2023-05-15'
+            log.info("[CHATGPT] gpt_vendor={}".format(vendor))
         else:
-            openai.api_key = model_conf(const.OPEN_AI).get('api_key')
-            openai.api_base = model_conf(const.OPEN_AI).get('api_base')
+            log.info("[CHATGPT] gpt_vendor={}".format(vendor))
 
     def reply(self, query, context=None):
         # acquire reply content
@@ -260,7 +261,7 @@ class ChatGPTModel(Model):
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
-            query_embedding = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
+            query_embedding = client.embeddings.create(input=query, model="text-embedding-ada-002").data[0].embedding
             orgnum = str(get_org_id(from_org_id))
             botnum = str(get_bot_id(from_chatbot_id))
             myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
@@ -270,8 +271,8 @@ class ChatGPTModel(Model):
                     {'role':'system', 'content':"You are an agent of Plaid, a digital financial service provider, and you try to handle the query about accounts or transactions."},
                     {"role":"user", "content":"Today is "+datetime.now().strftime("%Y-%m-%d")+". "+query}
                 ]
-                plaid_qcmp = openai.ChatCompletion.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs, tools=plaid_tools, tool_choice="auto",)
-                plaid_qrsp = plaid_qcmp["choices"][0]["message"]
+                plaid_qcmp = client.chat.completions.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs, tools=plaid_tools, tool_choice="auto")
+                plaid_qrsp = plaid_qcmp.choices[0].message
                 if plaid_qrsp.get("tool_calls"):
                     plaid_msgs.append(plaid_qrsp)
                     for tc in plaid_qrsp.get("tool_calls"):
@@ -282,11 +283,11 @@ class ChatGPTModel(Model):
                             function_tocall = plaid_funcs[function_name]
                             function_output = function_tocall(**function_args)
                             plaid_msgs.append({"tool_call_id":tc["id"], "role":"tool", "name":function_name, "content":function_output})
-                    plaid_fcmp = openai.ChatCompletion.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs,)
-                    reply_content = plaid_fcmp["choices"][0]["message"]["content"]
-                    used_tokens = plaid_fcmp["usage"]["total_tokens"]
-                    prompt_tokens = plaid_fcmp["usage"]["prompt_tokens"]
-                    completion_tokens = plaid_fcmp["usage"]["completion_tokens"]
+                    plaid_fcmp = client.chat.completions.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs)
+                    reply_content = plaid_fcmp.choices[0].message.content
+                    used_tokens = plaid_fcmp.usage.total_tokens
+                    prompt_tokens = plaid_fcmp.usage.prompt_tokens
+                    completion_tokens = plaid_fcmp.usage.completion_tokens
                     logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, used_tokens, prompt_tokens, completion_tokens)
                     reply_content+='\n```sf-json\n'
                     reply_content+=json.dumps({'logid':logid})
@@ -396,7 +397,7 @@ class ChatGPTModel(Model):
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
             reply_content, logid = self.reply_text(new_query, query, sfmodel, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, use_faiss, 0)
-            reply_embedding = openai.Embedding.create(input=reply_content, model="text-embedding-ada-002")["data"][0]['embedding']
+            reply_embedding = client.embeddings.create(input=reply_content, model="text-embedding-ada-002").data[0].embedding
             docs = myredis.ft_search(embedded_query=reply_embedding,
                                      vector_field="text_vector",
                                      hybrid_fields=myredis.create_hybrid_field2(orgnum, botnum, user_flag, "category", "kb"),
@@ -473,20 +474,24 @@ class ChatGPTModel(Model):
         msgs = [{'role':'system','content':sys_msg},{'role':'user','content':usr_msg}]
         try:
             use_azure = True if orgnum==4 else False
-            response = openai.ChatCompletion.create(
-                api_base=(model_conf(const.OPEN_AI).get('azure_api_base') if use_azure else None),
-                api_key=(model_conf(const.OPEN_AI).get('azure_api_key') if use_azure else None),
-                api_type=("azure" if use_azure else None),
-                api_version=("2023-05-15" if use_azure else None),
-                engine=("base" if use_azure else None),
-                model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",
-                messages=msgs,
-                temperature=0.1,
-                frequency_penalty=0.0,
-                presence_penalty=0.0,
-            )
-            reply_content = response.choices[0]['message']['content']
-            reply_usage = response['usage']
+            if use_azure:
+                response = azurec.chat.completions.create(
+                    model="base",
+                    messages=msgs,
+                    temperature=0.1,
+                    frequency_penalty=0.0,
+                    presence_penalty=0.0,
+                )
+            else:
+                response = client.chat.completions.create(
+                    model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",
+                    messages=msgs,
+                    temperature=0.1,
+                    frequency_penalty=0.0,
+                    presence_penalty=0.0,
+                )
+            reply_content = response.choices[0].message.content
+            reply_usage = response.usage
             log.info("[CHATGPT] find_teambot: result={} usage={}".format(reply_content,json.dumps(reply_usage)))
             dispatch = json.loads(reply_content)
             return int(dispatch['agent_id']), int(dispatch['team_id'])
@@ -505,30 +510,34 @@ class ChatGPTModel(Model):
 
             orgnum = get_org_id(org_id)
             use_azure = True if orgnum==4 else False
-            response = openai.ChatCompletion.create(
-                api_base=(model_conf(const.OPEN_AI).get('azure_api_base') if use_azure else None),
-                api_key=(model_conf(const.OPEN_AI).get('azure_api_key') if use_azure else None),
-                api_type=("azure" if use_azure else None),
-                api_version=("2023-05-15" if use_azure else None),
-                engine=("base" if use_azure else None), # Azure deployment Name
-                model=qmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",  # 对话模型的名称
-                messages=query,
-                temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
-                #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
-                #top_p=model_conf(const.OPEN_AI).get("top_p", 0.7),,  #候选词列表。0.7 意味着只考虑前70%候选词的标记，建议和temperature参数二选一使用
-                frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
-                presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0)  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
+            if use_azure:
+                response = azurec.chat.completions.create(
+                    model="base",
+                    messages=query,
+                    temperature=temperature,
+                    frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),
+                    presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0),
             )
-            reply_content = response.choices[0]['message']['content']
-            used_tokens = response['usage']['total_tokens']
-            prompt_tokens = response['usage']['prompt_tokens']
-            completion_tokens = response['usage']['completion_tokens']
+            else:
+                response = client.chat.completions.create(
+                    model=qmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",
+                    messages=query,
+                    temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
+                    #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
+                    #top_p=model_conf(const.OPEN_AI).get("top_p", 0.7),,  #候选词列表。0.7 意味着只考虑前70%候选词的标记，建议和temperature参数二选一使用
+                    frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
+                    presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0),  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
+                )
+            reply_content = response.choices[0].message.content
+            used_tokens = response.usage.total_tokens
+            prompt_tokens = response.usage.prompt_tokens
+            completion_tokens = response.usage.completion_tokens
             log.debug(response)
-            log.info("[CHATGPT] usage={}", json.dumps(response['usage']))
+            log.info("[CHATGPT] usage={}", json.dumps(response.usage))
             log.info("[CHATGPT] reply={}", reply_content)
             logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
             return reply_content, logid
-        except openai.error.RateLimitError as e:
+        except openai.RateLimitError as e:
             # rate limit exception
             log.warn(e)
             if retry_count < 1:
@@ -537,15 +546,15 @@ class ChatGPTModel(Model):
                 return self.reply_text(query, qtext, qmodel, user_id, org_id, chatbot_id, similarity, temperature, use_faiss, retry_count+1)
             else:
                 return "You're asking too quickly, please take a break before asking me again.", None
-        except openai.error.APIConnectionError as e:
+        except openai.APIConnectionError as e:
             log.warn(e)
             log.warn("[CHATGPT] APIConnection failed")
             return "I can't connect to the service, please try again later.", None
-        except openai.error.Timeout as e:
+        except openai.APITimeoutError as e:
             log.warn(e)
             log.warn("[CHATGPT] Timeout")
             return "I haven't received the message, please try again later.", None
-        except openai.error.ServiceUnavailableError as e:
+        except openai.InternalServerError as e:
             log.warn(e)
             log.warn("[CHATGPT] Service Unavailable")
             return "The server is overloaded or not ready yet.", None
@@ -606,7 +615,7 @@ class ChatGPTModel(Model):
             if sfmodel is None and sfbot_model is not None:
                 sfmodel = sfbot_model.decode().strip()
 
-            res = openai.ChatCompletion.create(
+            res = client.chat.completions.create(
                 model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",  # 对话模型的名称
                 messages=new_query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
@@ -614,7 +623,7 @@ class ChatGPTModel(Model):
                 #top_p=model_conf(const.OPEN_AI).get("top_p", 0.7),,  #候选词列表。0.7 意味着只考虑前70%候选词的标记，建议和temperature参数二选一使用
                 frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
                 presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0),  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
-                stream=True
+                stream=True,
             )
             full_response = ""
             for chunk in res:
@@ -642,7 +651,7 @@ class ChatGPTModel(Model):
             #log.debug("[CHATGPT] user={}, query={}, reply={}".format(from_user_id, new_query, full_response))
             yield True,full_response
 
-        except openai.error.RateLimitError as e:
+        except openai.RateLimitError as e:
             # rate limit exception
             log.warn(e)
             if retry_count < 1:
@@ -651,15 +660,15 @@ class ChatGPTModel(Model):
                 yield True, self.reply_text_stream(query, context, retry_count+1)
             else:
                 yield True, "You're asking too quickly, please take a break before asking me again."
-        except openai.error.APIConnectionError as e:
+        except openai.APIConnectionError as e:
             log.warn(e)
             log.warn("[CHATGPT] APIConnection failed")
             yield True, "I can't connect to the service, please try again later."
-        except openai.error.Timeout as e:
+        except openai.APITimeoutError as e:
             log.warn(e)
             log.warn("[CHATGPT] Timeout")
             yield True, "I haven't received the message, please try again later."
-        except openai.error.ServiceUnavailableError as e:
+        except openai.InternalServerError as e:
             log.warn(e)
             log.warn("[CHATGPT] Service Unavailable")
             yield True, "The server is overloaded or not ready yet."
@@ -672,15 +681,15 @@ class ChatGPTModel(Model):
     def create_img(self, query, retry_count=0):
         try:
             log.info("[OPEN_AI] image_query={}".format(query))
-            response = openai.Image.create(
+            response = client.images.generate(
                 prompt=query,    #图片描述
                 n=1,             #每次生成图片的数量
-                size="256x256"   #图片大小,可选有 256x256, 512x512, 1024x1024
+                size="256x256",  #图片大小,可选有 256x256, 512x512, 1024x1024
             )
-            image_url = response['data'][0]['url']
+            image_url = response.data[0].url
             log.info("[OPEN_AI] image_url={}".format(image_url))
             return [image_url]
-        except openai.error.RateLimitError as e:
+        except openai.RateLimitError as e:
             log.warn(e)
             if retry_count < 1:
                 time.sleep(5)
@@ -773,7 +782,7 @@ class Session(object):
         refurls = []
         hitdocs = []
         qna_output = None
-        myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
+        myquery = client.embeddings.create(input=query, model="text-embedding-ada-002").data[0].embedding
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field(qnaorg, "category", "qa"))
         if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
@@ -965,7 +974,7 @@ class Session(object):
     def get_resources(query, user_id, org_id):
         orgnum = get_org_id(org_id)
         resorg = "(0|{})".format(orgnum)
-        myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
+        myquery = client.embeddings.create(input=query, model="text-embedding-ada-002").data[0].embedding
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         ress = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(resorg, "category", "res"), k=5)
         if len(ress) == 0:
@@ -987,7 +996,7 @@ class Session(object):
     def get_top_resource(query, user_id, org_id, pos=0):
         orgnum = get_org_id(org_id)
         resorg = "(0|{})".format(orgnum)
-        myquery = openai.Embedding.create(input=query, model="text-embedding-ada-002")["data"][0]['embedding']
+        myquery = client.embeddings.create(input=query, model="text-embedding-ada-002").data[0].embedding
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         ress = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(resorg, "category", "res"), k=1, offset=pos)
         if len(ress) == 0:
