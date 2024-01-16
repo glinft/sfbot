@@ -274,16 +274,16 @@ class ChatGPTModel(Model):
                 ]
                 plaid_qcmp = client.chat.completions.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs, tools=plaid_tools, tool_choice="auto")
                 plaid_qrsp = plaid_qcmp.choices[0].message
-                if plaid_qrsp.get("tool_calls"):
+                if plaid_qrsp.tool_calls is not None:
                     plaid_msgs.append(plaid_qrsp)
-                    for tc in plaid_qrsp.get("tool_calls"):
-                        if tc["type"]=="function":
-                            function_name=tc["function"]["name"]
-                            function_args = json.loads(tc["function"]["arguments"])
+                    for tc in plaid_qrsp.tool_calls:
+                        if tc.type=="function":
+                            function_name=tc.function.name
+                            function_args = json.loads(tc.function.arguments)
                             function_args["user_id"] = user_uuid
                             function_tocall = plaid_funcs[function_name]
                             function_output = function_tocall(**function_args)
-                            plaid_msgs.append({"tool_call_id":tc["id"], "role":"tool", "name":function_name, "content":function_output})
+                            plaid_msgs.append({"tool_call_id":tc.id, "role":"tool", "name":function_name, "content":function_output})
                     plaid_fcmp = client.chat.completions.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs)
                     reply_content = plaid_fcmp.choices[0].message.content
                     used_tokens = plaid_fcmp.usage.total_tokens
