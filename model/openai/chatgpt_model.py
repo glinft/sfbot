@@ -19,7 +19,7 @@ import hashlib
 import openai
 import tiktoken
 from datetime import datetime
-from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from urllib.parse import urlparse, urlunparse
 
