@@ -175,7 +175,10 @@ def get_plaid_transactions_data(user_id, start_date, end_date):
         txresp = json.loads(sfresp.text)
         txdata = txresp["Transactions"]
         if len(txdata["transactions"])==0:
-            return "Transactions: NO DATA\n\n"
+            # return "Transactions: NO DATA\n\n"
+            with open('/path/to/plaidtx.json', 'r') as txfile:
+                txresp = json.load(txfile)
+                txdata = txresp["Transactions"]
         result = ""
         for idx,txn in enumerate(txdata["transactions"], start=1):
             result += f"Transaction {idx}:\n"
@@ -243,6 +246,7 @@ class ChatGPTModel(Model):
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
             user_uuid = context.get('userid','undef')
+            user_asst = context.get('userasst','undef')
             nres = int(context.get('res','0'))
             fwd = int(context.get('fwd','0'))
             character_id = context.get('character_id')
@@ -253,6 +257,8 @@ class ChatGPTModel(Model):
             sfmodel = context.get('sfmodel','undef')
             if not is_valid_uuid(user_uuid):
                 user_uuid = None
+            if not is_valid_uuid(user_asst):
+                user_asst = None
             if not (isinstance(sfmodel, str) and sfmodel.startswith('ft:')):
                 sfmodel = None
 
@@ -286,6 +292,8 @@ class ChatGPTModel(Model):
                             plaid_msgs.append({"tool_call_id":tc.id, "role":"tool", "name":function_name, "content":function_output})
                     plaid_fcmp = client.chat.completions.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs)
                     reply_content = plaid_fcmp.choices[0].message.content
+                    log.info("[PLAID]  msgs={}", plaid_msgs)
+                    log.info("[PLAID] reply={}", reply_content)
                     used_tokens = plaid_fcmp.usage.total_tokens
                     prompt_tokens = plaid_fcmp.usage.prompt_tokens
                     completion_tokens = plaid_fcmp.usage.completion_tokens
@@ -297,8 +305,26 @@ class ChatGPTModel(Model):
 
             teammode = int(context.get('teammode','0'))
             teambotkeep = int(context.get('teambotkeep','0'))
+            # team-bot or assistant-bot
             teamid = int(context.get('teamid','0'))
             teambotid = int(context.get('teambotid','0'))
+
+            if user_asst and (teamid == 0 or teambotid == 0):
+                user_asst = None
+            if user_asst:
+                teambot_key = "sfasst:user:{}:team:{}:bot:{}".format(user_asst,teamid,teambotid)
+                if myredis.redis.exists(teambot_key):
+                    teammode = 2
+                    teambot_name = myredis.redis.hget(teambot_key, 'name').decode().strip()
+                    teambot_desc = myredis.redis.hget(teambot_key, 'desc').decode().strip()
+                    teambot_prompt = myredis.redis.hget(teambot_key, 'prompt').decode().strip()
+                    teambot_model = myredis.redis.hget(teambot_key, 'model')
+                    teambot_nokb = 1
+                    if teambot_nokb > 0:
+                        fwd = 1
+                else:
+                    user_asst = None
+
             if teammode == 1:
                 if teambotkeep == 2:
                     teambotkeep = 1
@@ -349,7 +375,7 @@ class ChatGPTModel(Model):
             if teammode == 1:
                 teambot_instruction = (
                     f"You are {teambot_name}.\n{teambot_desc}.\n"
-                    "You only provide factual answers to queries, and do not try to make up an answer.\n"
+                    "You only provide clear, concise, factual answers to queries, and do not try to make up an answer.\n"
                     "Do not try to answer the queries that are irrelevant to your functionality and responsibility, just reject them politely.\n"
                     "Your functionality and responsibility are described below, separated by 3 backticks.\n\n"
                     f"```\n{teambot_prompt}\n```\n"
@@ -357,6 +383,19 @@ class ChatGPTModel(Model):
                 character_id = f"x{teambotid}"
                 character_desc = teambot_instruction
                 log.info("[CHATGPT] teambot character id={} desc={}".format(character_id,character_desc))
+                if sfmodel is None and teambot_model is not None:
+                    sfmodel = teambot_model.decode().strip()
+            elif teammode == 2:
+                teambot_instruction = (
+                    f"You are {teambot_name}.\n{teambot_desc}.\n"
+                    "You only provide clear, concise, factual answers to queries, and do not try to make up an answer.\n"
+                    "Do not try to answer the queries that are irrelevant to your functionality and responsibility, just reject them politely.\n"
+                    "Your functionality and responsibility are described below, separated by 3 backticks.\n\n"
+                    f"```\n{teambot_prompt}\n```\n"
+                )
+                character_id = f"y{teambotid}"
+                character_desc = teambot_instruction
+                log.info("[CHATGPT] asstbot character id={} desc={}".format(character_id,character_desc))
                 if sfmodel is None and teambot_model is not None:
                     sfmodel = teambot_model.decode().strip()
             else:
@@ -461,7 +500,7 @@ class ChatGPTModel(Model):
             return 0, 0
         sys_msg = (
             "You are a contact-center manager, and you try to dispatch the user query to the most suitable team/agent.\n"
-            "You only provide factual answers to queries, and do not try to make up an answer.\n"
+            "You only provide clear, concise, factual answers to queries, and do not try to make up an answer.\n"
             "The functionality and responsibility of teams are described below in markdown format.\n\n"
             f"```markdown\n{team_info}\n```\n"
         )
@@ -574,6 +613,7 @@ class ChatGPTModel(Model):
             from_org_id, from_chatbot_id = get_org_bot(from_org_id)
             user_flag = context['userflag']
             user_uuid = context.get('userid','undef')
+            user_asst = context.get('userasst','undef')
             nres = int(context.get('res','0'))
             fwd = int(context.get('fwd','0'))
             character_id = context.get('character_id')
@@ -584,6 +624,8 @@ class ChatGPTModel(Model):
             sfmodel = context.get('sfmodel','undef')
             if not is_valid_uuid(user_uuid):
                 user_uuid = None
+            if not is_valid_uuid(user_asst):
+                user_asst = None
             if not (isinstance(sfmodel, str) and sfmodel.startswith('ft:')):
                 sfmodel = None
             new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_uuid, website, email, fwd)

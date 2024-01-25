@@ -263,6 +263,8 @@ class HttpChannel(Channel):
         context['teambotid'] = str(teambotid)
         userid = data.get("userid", 'undef')
         context['userid'] = str(userid)
+        userasst = data.get("userasst", 'undef')
+        context['userasst'] = str(userasst)
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
             'channel': self, 'context': query,  "args": context}))
         reply = e_context['reply']
@@ -309,6 +311,8 @@ class HttpChannel(Channel):
         context['teambotid'] = str(teambotid)
         userid = data.get("userid", 'undef')
         context['userid'] = str(userid)
+        userasst = data.get("userasst", 'undef')
+        context['userasst'] = str(userasst)
         context['stream'] = True
         context['origin'] = query
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
