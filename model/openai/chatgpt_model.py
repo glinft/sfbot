@@ -312,7 +312,7 @@ class ChatGPTModel(Model):
             if user_asst and (teamid == 0 or teambotid == 0):
                 user_asst = None
             if user_asst:
-                teambot_key = "sfasst:user:{}:team:{}:bot:{}".format(user_asst,teamid,teambotid)
+                teambot_key = "sfteam:user:{}:team:{}:bot:{}".format(user_asst,teamid,teambotid)
                 if myredis.redis.exists(teambot_key):
                     teammode = 2
                     teambot_name = myredis.redis.hget(teambot_key, 'name').decode().strip()
@@ -372,7 +372,7 @@ class ChatGPTModel(Model):
             if teammode == 0:
                 teamid = 0
                 teambotid = 0
-            if teammode == 1:
+            if teammode > 0:
                 teambot_instruction = (
                     f"You are {teambot_name}.\n{teambot_desc}.\n"
                     "You only provide clear, concise, factual answers to queries, and do not try to make up an answer.\n"
@@ -382,22 +382,12 @@ class ChatGPTModel(Model):
                 )
                 character_id = f"x{teambotid}"
                 character_desc = teambot_instruction
-                log.info("[CHATGPT] teambot character id={} desc={}".format(character_id,character_desc))
                 if sfmodel is None and teambot_model is not None:
                     sfmodel = teambot_model.decode().strip()
-            elif teammode == 2:
-                teambot_instruction = (
-                    f"You are {teambot_name}.\n{teambot_desc}.\n"
-                    "You only provide clear, concise, factual answers to queries, and do not try to make up an answer.\n"
-                    "Do not try to answer the queries that are irrelevant to your functionality and responsibility, just reject them politely.\n"
-                    "Your functionality and responsibility are described below, separated by 3 backticks.\n\n"
-                    f"```\n{teambot_prompt}\n```\n"
-                )
-                character_id = f"y{teambotid}"
-                character_desc = teambot_instruction
-                log.info("[CHATGPT] asstbot character id={} desc={}".format(character_id,character_desc))
-                if sfmodel is None and teambot_model is not None:
-                    sfmodel = teambot_model.decode().strip()
+                if user_asst:
+                    log.info("[CHATGPT] asstbot character id={} desc={}".format(character_id,character_desc))
+                else:
+                    log.info("[CHATGPT] teambot character id={} desc={}".format(character_id,character_desc))
             else:
                 sfbot_key = "sfbot:org:{}:bot:{}".format(orgnum,botnum)
                 sfbot_model = myredis.redis.hget(sfbot_key, 'model')
@@ -417,7 +407,7 @@ class ChatGPTModel(Model):
                     csf = 1.0 - float(atc.vector_score)
                     commands.append({'id':cid,'category':"actionTransformer",'score':csf})
 
-            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_uuid, website, email, fwd)
+            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_asst, website, email, fwd)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
@@ -628,7 +618,7 @@ class ChatGPTModel(Model):
                 user_asst = None
             if not (isinstance(sfmodel, str) and sfmodel.startswith('ft:')):
                 sfmodel = None
-            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_uuid, website, email, fwd)
+            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_asst, website, email, fwd)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
@@ -822,6 +812,8 @@ class Session(object):
         botnum = str(get_bot_id(chatbot_id))
         if isinstance(character_id, str) and (character_id[0] == 'c' or character_id[0] == 'x' or character_id[0] == 't'):
             botnum += " | {}".format(character_id)
+        if user_uuid:
+            botnum = str(character_id)
         refurls = []
         hitdocs = []
         qna_output = None
@@ -878,7 +870,10 @@ class Session(object):
             return session, [], [], similarity, False
 
         if isinstance(character_id, str) and character_id.startswith('x'):
-            log.info("[CHATGPT] teambot character id={} add context".format(character_id))
+            if user_uuid:
+                log.info("[CHATGPT] asstbot character id={} add context".format(character_id))
+            else:
+                log.info("[CHATGPT] teambot character id={} add context".format(character_id))
         else:
             system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
             # system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
