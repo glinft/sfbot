@@ -278,7 +278,7 @@ class ChatGPTModel(Model):
                     {'role':'system', 'content':"You are an agent of Plaid, a digital financial service provider, and you try to handle the query about accounts or transactions."},
                     {"role":"user", "content":"Today is "+datetime.now().strftime("%Y-%m-%d")+". "+query}
                 ]
-                plaid_qcmp = client.chat.completions.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs, tools=plaid_tools, tool_choice="auto")
+                plaid_qcmp = client.chat.completions.create(model="gpt-3.5-turbo-0125", messages=plaid_msgs, tools=plaid_tools, tool_choice="auto")
                 plaid_qrsp = plaid_qcmp.choices[0].message
                 if plaid_qrsp.tool_calls is not None:
                     plaid_msgs.append(plaid_qrsp)
@@ -290,7 +290,7 @@ class ChatGPTModel(Model):
                             function_tocall = plaid_funcs[function_name]
                             function_output = function_tocall(**function_args)
                             plaid_msgs.append({"tool_call_id":tc.id, "role":"tool", "name":function_name, "content":function_output})
-                    plaid_fcmp = client.chat.completions.create(model="gpt-3.5-turbo-1106", messages=plaid_msgs)
+                    plaid_fcmp = client.chat.completions.create(model="gpt-3.5-turbo-0125", messages=plaid_msgs)
                     reply_content = plaid_fcmp.choices[0].message.content
                     log.info("[PLAID]  msgs={}", plaid_msgs)
                     log.info("[PLAID] reply={}", reply_content)
@@ -514,7 +514,7 @@ class ChatGPTModel(Model):
                 )
             else:
                 response = client.chat.completions.create(
-                    model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",
+                    model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
                     messages=msgs,
                     temperature=0.1,
                     frequency_penalty=0.0,
@@ -550,7 +550,7 @@ class ChatGPTModel(Model):
             )
             else:
                 response = client.chat.completions.create(
-                    model=qmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",
+                    model=qmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
                     messages=query,
                     temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                     #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
@@ -649,7 +649,7 @@ class ChatGPTModel(Model):
                 sfmodel = sfbot_model.decode().strip()
 
             res = client.chat.completions.create(
-                model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-1106",  # 对话模型的名称
+                model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",  # 对话模型的名称
                 messages=new_query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
@@ -951,9 +951,9 @@ class Session(object):
     def save_session(query, answer, user_id, org_id, chatbot_id, used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0, use_faiss=False):
         max_tokens = model_conf(const.OPEN_AI).get('conversation_max_tokens')
         max_history_num = model_conf(const.OPEN_AI).get('max_history_num', None)
-        if not max_tokens or max_tokens > 4000:
+        if not max_tokens or max_tokens > 4096:
             # default value
-            max_tokens = 1000
+            max_tokens = 4096
         session = user_session.get(user_id)
         if session:
             # append conversation
