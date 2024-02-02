@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from channel.http import auth
 from flask import Flask, request, render_template, make_response
 from datetime import timedelta
@@ -25,6 +26,10 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
     return response
+
+def is_valid_uuid(uuidstr):
+    pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    return bool(re.match(pattern, uuidstr, re.IGNORECASE))
 
 # 自动重载模板文件
 http_app.jinja_env.auto_reload = True
@@ -132,6 +137,7 @@ def chat():
                 'pages': extra.get('pages',[]),
                 'resources': extra.get('resources',[]),
                 'commands': extra.get('commands',[]),
+                'images': extra.get('images',[]),
                 'score': extra.get('score',None),
                 'teammode': extra.get('teammode',None),
                 'teamid': extra.get('teamid',None),
@@ -265,6 +271,14 @@ class HttpChannel(Channel):
         context['userid'] = str(userid)
         userasst = data.get("userasst", 'undef')
         context['userasst'] = str(userasst)
+
+        if is_valid_uuid(userid):
+            img_match_prefix = functions.check_prefix(
+                query, channel_conf_val(const.HTTP, 'image_create_prefix'))
+            if img_match_prefix:
+                query = query.split(img_match_prefix, 1)[1].strip()
+                context['type'] = 'IMAGE_CREATE'
+
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {
             'channel': self, 'context': query,  "args": context}))
         reply = e_context['reply']

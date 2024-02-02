@@ -237,9 +237,7 @@ class ChatGPTModel(Model):
     def reply(self, query, context=None):
         # acquire reply content
         if not context or not context.get('type') or context.get('type') == 'TEXT':
-            cargs = context
-            cargs['character_desc'] = None
-            log.info("[CHATGPT] cargs={}".format(cargs))
+            log.info("[CHATGPT] context={}".format(context))
             log.info("[CHATGPT] query={}".format(query))
             from_user_id = context['from_user_id']
             from_org_id = context['from_org_id']
@@ -457,7 +455,13 @@ class ChatGPTModel(Model):
             return reply_content
 
         elif context.get('type', None) == 'IMAGE_CREATE':
-            return self.create_img(query, 0)
+            #return self.create_img(query, 0)
+            imgdata = self.create_img(query, 0)
+            reply_content=f"Image prompt: {query}\n"
+            reply_content+='\n```sf-json\n'
+            reply_content+=json.dumps({'images':imgdata})
+            reply_content+='\n```\n'
+            return reply_content
 
     def find_teambot(self, user_flag, org_id, chatbot_id, team_id, query):
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
@@ -649,7 +653,7 @@ class ChatGPTModel(Model):
                 sfmodel = sfbot_model.decode().strip()
 
             res = client.chat.completions.create(
-                model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",  # 对话模型的名称
+                model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
                 messages=new_query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
@@ -713,20 +717,22 @@ class ChatGPTModel(Model):
 
     def create_img(self, query, retry_count=0):
         try:
-            log.info("[OPEN_AI] image_query={}".format(query))
+            log.info("[DALLE] image_query={}".format(query))
             response = client.images.generate(
-                prompt=query,    #图片描述
-                n=1,             #每次生成图片的数量
-                size="256x256",  #图片大小,可选有 256x256, 512x512, 1024x1024
+                model="dall-e-3",
+                size="1024x1024",
+                quality="standard",
+                prompt=query,
+                n=1,
             )
             image_url = response.data[0].url
-            log.info("[OPEN_AI] image_url={}".format(image_url))
+            log.info("[DALLE] image_url={}".format(image_url))
             return [image_url]
         except openai.RateLimitError as e:
             log.warn(e)
             if retry_count < 1:
                 time.sleep(5)
-                log.warn("[OPEN_AI] ImgCreate RateLimit exceed, retry {} attempts".format(retry_count+1))
+                log.warn("[DALLE] ImgCreate RateLimit exceed, retry {} attempts".format(retry_count+1))
                 return self.create_img(query, retry_count+1)
             else:
                 return "You're asking too quickly, please take a break before asking me again."
