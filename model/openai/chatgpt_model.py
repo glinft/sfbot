@@ -23,9 +23,12 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from urllib.parse import urlparse, urlunparse
 
+oai_key = model_conf(const.OPEN_AI).get('api_key')
+oai_embeddings_model = "text-embedding-ada-002"
+oai_embeddings = OpenAIEmbeddings(openai_api_key=oai_key, model=oai_embeddings_model)
 client = OpenAI(
     base_url=model_conf(const.OPEN_AI).get('api_base'),
-    api_key=model_conf(const.OPEN_AI).get('api_key'),
+    api_key=oai_key,
 )
 azurec = AzureOpenAI(
     azure_endpoint=model_conf(const.OPEN_AI).get('azure_api_base'),
@@ -266,7 +269,7 @@ class ChatGPTModel(Model):
                 Session.clear_session(from_user_id)
                 return 'Session is reset.'
 
-            query_embedding = client.embeddings.create(input=query, model="text-embedding-ada-002").data[0].embedding
+            query_embedding = oai_embeddings.embed_query(query)
             orgnum = str(get_org_id(from_org_id))
             botnum = str(get_bot_id(from_chatbot_id))
             myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
@@ -425,7 +428,7 @@ class ChatGPTModel(Model):
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
             reply_content, logid = self.reply_text(new_query, query, sfmodel, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, use_faiss, 0)
-            reply_embedding = client.embeddings.create(input=reply_content, model="text-embedding-ada-002").data[0].embedding
+            reply_embedding = oai_embeddings.embed_query(reply_content)
             docs = myredis.ft_search(embedded_query=reply_embedding,
                                      vector_field="text_vector",
                                      hybrid_fields=myredis.create_hybrid_field2(orgnum, botnum, user_flag, "category", "kb"),
@@ -771,9 +774,7 @@ class Session(object):
             log.info("[FAISS] try to load local store {}".format(faiss_id))
         if re.match(md5sum_pattern, faiss_id) and os.path.exists(f"{faiss_store_root}{faiss_id}"):
             faiss_store_path = f"{faiss_store_root}{faiss_id}"
-            mykey = model_conf(const.OPEN_AI).get('api_key')
-            embeddings = OpenAIEmbeddings(openai_api_key=mykey)
-            dbx = FAISS.load_local(faiss_store_path, embeddings)
+            dbx = FAISS.load_local(faiss_store_path, oai_embeddings)
             log.info("[FAISS] local store loaded")
             similarity = 0.0
             docs = dbx.similarity_search_with_score(query, k=3)
@@ -823,7 +824,7 @@ class Session(object):
         refurls = []
         hitdocs = []
         qna_output = None
-        myquery = client.embeddings.create(input=query, model="text-embedding-ada-002").data[0].embedding
+        myquery = oai_embeddings.embed_query(query)
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field(qnaorg, "category", "qa"))
         if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
@@ -1018,7 +1019,7 @@ class Session(object):
     def get_resources(query, user_id, org_id):
         orgnum = get_org_id(org_id)
         resorg = "(0|{})".format(orgnum)
-        myquery = client.embeddings.create(input=query, model="text-embedding-ada-002").data[0].embedding
+        myquery = oai_embeddings.embed_query(query)
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         ress = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(resorg, "category", "res"), k=5)
         if len(ress) == 0:
@@ -1040,7 +1041,7 @@ class Session(object):
     def get_top_resource(query, user_id, org_id, pos=0):
         orgnum = get_org_id(org_id)
         resorg = "(0|{})".format(orgnum)
-        myquery = client.embeddings.create(input=query, model="text-embedding-ada-002").data[0].embedding
+        myquery = oai_embeddings.embed_query(query)
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         ress = myredis.ft_search(embedded_query=myquery, vector_field="text_vector", hybrid_fields=myredis.create_hybrid_field(resorg, "category", "res"), k=1, offset=pos)
         if len(ress) == 0:
