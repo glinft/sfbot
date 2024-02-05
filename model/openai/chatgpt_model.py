@@ -260,7 +260,7 @@ class ChatGPTModel(Model):
                 user_uuid = None
             if not is_valid_uuid(user_asst):
                 user_asst = None
-            if not (isinstance(sfmodel, str) and sfmodel.startswith('ft:')):
+            if not (isinstance(sfmodel, str) and (sfmodel.startswith('ft:') or sfmodel.startswith('gpt-'))):
                 sfmodel = None
 
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
@@ -560,7 +560,7 @@ class ChatGPTModel(Model):
                     model=qmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
                     messages=query,
                     temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
-                    #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
+                    #max_tokens=8192,
                     #top_p=model_conf(const.OPEN_AI).get("top_p", 0.7),,  #候选词列表。0.7 意味着只考虑前70%候选词的标记，建议和temperature参数二选一使用
                     frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
                     presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0),  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
@@ -623,8 +623,9 @@ class ChatGPTModel(Model):
                 user_uuid = None
             if not is_valid_uuid(user_asst):
                 user_asst = None
-            if not (isinstance(sfmodel, str) and sfmodel.startswith('ft:')):
+            if not (isinstance(sfmodel, str) and (sfmodel.startswith('ft:') or sfmodel.startswith('gpt-'))):
                 sfmodel = None
+
             new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_asst, website, email, fwd)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
@@ -659,7 +660,7 @@ class ChatGPTModel(Model):
                 model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
                 messages=new_query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
-                #max_tokens=4096,  # 回复最大的字符数，为输入和输出的总数
+                #max_tokens=8192,
                 #top_p=model_conf(const.OPEN_AI).get("top_p", 0.7),,  #候选词列表。0.7 意味着只考虑前70%候选词的标记，建议和temperature参数二选一使用
                 frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
                 presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0),  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
@@ -958,9 +959,9 @@ class Session(object):
     def save_session(query, answer, user_id, org_id, chatbot_id, used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0, use_faiss=False):
         max_tokens = model_conf(const.OPEN_AI).get('conversation_max_tokens')
         max_history_num = model_conf(const.OPEN_AI).get('max_history_num', None)
-        if not max_tokens or max_tokens > 4096:
+        if not max_tokens or max_tokens > 8192:
             # default value
-            max_tokens = 4096
+            max_tokens = 8192
         session = user_session.get(user_id)
         if session:
             # append conversation
