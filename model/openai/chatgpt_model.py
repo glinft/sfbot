@@ -22,6 +22,7 @@ from datetime import datetime
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from urllib.parse import urlparse, urlunparse
+from duckduckgo_search import DDGS
 
 oai_key = model_conf(const.OPEN_AI).get('api_key')
 oai_embeddings_model = "text-embedding-ada-002"
@@ -223,6 +224,16 @@ plaid_tools = [
     },
 ]
 
+def get_latest_news(query):
+    query=query.strip()
+    if len(query) == 0:
+        return None
+    ddgs_result=[]
+    with DDGS(timeout=5) as ddgs:
+        for r in ddgs.news(query, max_results=10):
+            ddgs_result.append(r)
+    return json.dumps(ddgs_result)
+
 # OpenAI对话模型API (可用)
 class ChatGPTModel(Model):
     def __init__(self):
@@ -374,10 +385,10 @@ class ChatGPTModel(Model):
                 teamid = 0
                 teambotid = 0
             if teammode > 0:
+                # "Do not try to answer the queries that are irrelevant to your functionality and responsibility, just reject them politely.\n"
                 teambot_instruction = (
                     f"You are {teambot_name}.\n{teambot_desc}.\n"
                     "You only provide clear, concise, factual answers to queries, and do not try to make up an answer.\n"
-                    "Do not try to answer the queries that are irrelevant to your functionality and responsibility, just reject them politely.\n"
                     "Your functionality and responsibility are described below, separated by 3 backticks.\n\n"
                     f"```\n{teambot_prompt}\n```\n"
                 )
