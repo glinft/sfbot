@@ -143,7 +143,7 @@ def check_apikey(request):
         if not sfkey:
             log.info("auth:check_apikey No SfKey")
             return False, None
-        keyval = common_conf_val('sflow_apikey', 'Sflow!')
+        keyval = common_conf_val('sflow_api_key', 'Sflow!')
         if (sfkey != keyval):
             log.info("auth:check_apikey Bad SfKey")
             return False, None
