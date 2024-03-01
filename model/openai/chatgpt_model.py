@@ -149,8 +149,7 @@ def run_word_filter(text, org_id):
 
 def get_plaid_balance_data(user_id):
     url = f"https://api.sflow.io/plaid/api/balance_data/{user_id}"
-    payload = {}
-    sfresp = requests.post(url, json=payload)
+    sfresp = requests.get(url)
     if sfresp.status_code==200:
         blresp = json.loads(sfresp.text)
         bldata = blresp["Balance"]
@@ -196,6 +195,15 @@ def get_plaid_transactions_data(user_id, start_date, end_date):
             result += f"- Type: {txn['transaction_type']}\n\n"
         return result
     return "Transactions: NO DATA\n\n"
+
+def get_plaid_liabilities_data(user_id):
+    return "Liabilities: NO DATA\n\n"
+
+def get_plaid_investments_holdings(user_id):
+    return "InvestmentsHoldings: NO DATA\n\n"
+
+def get_plaid_investments_transactions(user_id, start_date, end_date):
+    return "InvestmentsTransactions: NO DATA\n\n"
 
 plaid_funcs = { "get_plaid_balance_data": get_plaid_balance_data, "get_plaid_transactions_data": get_plaid_transactions_data, }
 plaid_tools = [
@@ -869,6 +877,11 @@ class Session(object):
         orgnum = str(get_org_id(org_id))
         botnum = str(get_bot_id(chatbot_id))
         sfbot_key = "sfbot:org:{}:bot:{}".format(orgnum,botnum)
+        sfbot_threshold = myredis.redis.hget(sfbot_key, 'threshold')
+        if sfbot_threshold is not None:
+            sfbot_threshold = 1.0-int(sfbot_threshold.decode())/100
+        else:
+            sfbot_threshold = 0.6
         sfbot_char_desc = myredis.redis.hget(sfbot_key, 'character_desc')
         if sfbot_char_desc is not None:
             sfbot_char_desc = sfbot_char_desc.decode()
@@ -914,7 +927,8 @@ class Session(object):
             system_prompt += '\n' + qna_output
         for i, doc in enumerate(docs):
             log.info(f"{i}) {doc.id} {doc.orgid} {doc.category} {doc.vector_score}")
-            system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
+            if float(doc.vector_score) < sfbot_threshold:
+                system_prompt += '\n' + myredis.redis.hget(doc.id, 'text').decode()
             if float(doc.vector_score) < 0.15:
                 urlhit = ''
                 docurl = myredis.redis.hget(doc.id, 'source')
