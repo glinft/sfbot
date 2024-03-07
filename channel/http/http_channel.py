@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 from channel.http import auth
+from channel.http import rest
 from flask import Flask, request, render_template, make_response
 from datetime import timedelta
 from common import const
@@ -229,6 +230,26 @@ def login2():
     return response
 
 
+@http_app.route("/sfbot/filesearch", methods=['POST'])
+def filesearch():
+    flag, orgid = auth.identify(request)
+    if (flag == False):
+        return {'error':'auth failed'}
+    try:
+        data = json.loads(request.data)
+        if not data:
+            return {'error':'no request data'}
+        query = data.get("query")
+        if not query:
+            return {'error':'no query string'}
+        flag, results = rest.filesearch(request)
+        if not flag:
+            return {'error':'search failed'}
+        return {'error': 'none', "data": results}
+    except Exception as e:
+        return {'error':'something wrong'}
+
+
 class HttpChannel(Channel):
     def startup(self):
         http_app.run(host='0.0.0.0', port=channel_conf(const.HTTP).get('port'))
@@ -271,6 +292,10 @@ class HttpChannel(Channel):
         context['userid'] = str(userid)
         userasst = data.get("userasst", 'undef')
         context['userasst'] = str(userasst)
+        fileids = data.get("fids", [0])
+        if len(fileids) == 0:
+            fileids.append(0)
+        context['fileids'] = '|'.join(map(str, fileids))
 
         if is_valid_uuid(userid):
             img_match_prefix = functions.check_prefix(
@@ -327,6 +352,11 @@ class HttpChannel(Channel):
         context['userid'] = str(userid)
         userasst = data.get("userasst", 'undef')
         context['userasst'] = str(userasst)
+        fileids = data.get("fids", [0])
+        if len(fileids) == 0:
+            fileids.append(0)
+        context['fileids'] = '|'.join(map(str, fileids))
+
         context['stream'] = True
         context['origin'] = query
         e_context = PluginManager().emit_event(EventContext(Event.ON_HANDLE_CONTEXT, {

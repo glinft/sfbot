@@ -5,6 +5,7 @@ import datetime
 import time
 import hashlib
 import json
+import re
 from flask import jsonify, request
 from common import const
 from common.redis import RedisSingleton
@@ -72,6 +73,10 @@ class Auth():
         except jwt.InvalidTokenError:
             return 'Invalid Token'
 
+def is_valid_uuid(uuidstr):
+    pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    return bool(re.match(pattern, uuidstr, re.IGNORECASE))
+
 def authenticate(username, password):
     """
     用户登录，登录成功返回token
@@ -79,6 +84,18 @@ def authenticate(username, password):
     :param password: str
     :return: str|boolean
     """
+    pattern = r'^org:(\d+):user:([0-9a-f-]+)$'
+    match = re.search(pattern, username)
+    if match:
+        userid = str(match.group(2))
+        if is_valid_uuid(userid):
+            credential = calculate_md5(username)
+            if (credential != password):
+                return False
+            login_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            token = Auth.encode_auth_token(username, password, login_time)
+            return token
+
     myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
     myredis.redis.select(0)
     credential = myredis.redis.hget('sfbot:'+username, 'password')
@@ -114,6 +131,18 @@ def identify(request):
             return False, None
         username = payload['data']['id']
         hashcode = payload['data']['hashcode']
+        pattern = r'^org:(\d+):user:([0-9a-f-]+)$'
+        match = re.search(pattern, username)
+        if match:
+            userid = str(match.group(2))
+            if is_valid_uuid(userid):
+                credential = calculate_md5(username)
+                rehash = calculate_md5(credential.ljust(32, '#'))
+                if (rehash == hashcode):
+                    return True, username
+            log.info("auth:identify Invalid Hashcode")
+            return False, None
+
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         myredis.redis.select(0)
         credential = myredis.redis.hget('sfbot:'+username, 'password')
