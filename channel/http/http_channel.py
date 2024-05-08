@@ -5,16 +5,17 @@ import json
 import re
 from channel.http import auth
 from channel.http import rest
-from flask import Flask, request, render_template, make_response
+from flask import Flask, Response, request, render_template, make_response, stream_with_context
 from datetime import timedelta
 from common import const
 from common import functions
-from config import channel_conf, channel_conf_val
+from config import model_conf, channel_conf, channel_conf_val
 from channel.channel import Channel
 from flask_socketio import SocketIO
 from flask_cors import CORS
 from common import log
 from plugins.plugin_manager import *
+from model import model_factory
 
 http_app = Flask(__name__,)
 socketio = SocketIO(http_app, path='/sfbot/socket.io', cors_allowed_origins=['https://api.sflow.io'], close_timeout=5)
@@ -146,6 +147,22 @@ def chat():
                 'logid': extra.get('logid',None)}
 
 
+@http_app.route("/sfbot/chat2", methods=['POST'])
+def chat2():
+    flag, orgid = auth.identify(request)
+    if (flag == False):
+        return {'error':'auth failed'}
+    data = json.loads(request.data)
+    if not data:
+        return {'error':'no data'}
+    msg = data.get("msg")
+    if not msg:
+        return {'error':'no message'}
+    data['orgid'] = orgid
+    type = model_conf('type')
+    return Response(stream_with_context(model_factory.create_bot(type).gpt_stream(data)), content_type='text/event-stream')
+
+
 @http_app.route("/sfbot/sms", methods=['POST'])
 def handle_sms():
     flag, orgid = auth.check_apikey(request)
@@ -235,6 +252,7 @@ def filesearch():
     flag, orgid = auth.identify(request)
     if (flag == False):
         return {'error':'auth failed'}
+    #log.info('Search: '+request.data.decode('utf-8'))
     try:
         data = json.loads(request.data)
         if not data:
@@ -265,6 +283,8 @@ class HttpChannel(Channel):
         context['res'] = str(res)
         fwd = data.get("fwd", 0)
         context['fwd'] = str(fwd)
+        ctx = data.get("ctx", 0)
+        context['ctx'] = str(ctx)
         userflag = data.get("userflag", 'external')
         context['userflag'] = str(userflag)
         sfmodel = data.get("model", 'undef')
@@ -276,9 +296,9 @@ class HttpChannel(Channel):
         context['character_desc'] = str(character_desc)
         temperature = data.get("temperature", 'undef')
         context['temperature'] = str(temperature)
-        website= data.get("website", 'undef')
+        website = data.get("website", 'undef')
         context['website'] = str(website)
-        email= data.get("email", 'undef')
+        email = data.get("email", 'undef')
         context['email'] = str(email)
         teammode = data.get("teammode", 0)
         context['teammode'] = str(teammode)
@@ -292,6 +312,8 @@ class HttpChannel(Channel):
         context['userid'] = str(userid)
         userasst = data.get("userasst", 'undef')
         context['userasst'] = str(userasst)
+        sfuserid = data.get("sfuserid", 'undef')
+        context['sfuserid'] = str(sfuserid)
         fileids = data.get("fids", [0])
         if len(fileids) == 0:
             fileids.append(0)
@@ -325,6 +347,8 @@ class HttpChannel(Channel):
         context['res'] = str(res)
         fwd = data.get("fwd", 0)
         context['fwd'] = str(fwd)
+        ctx = data.get("ctx", 0)
+        context['ctx'] = str(ctx)
         userflag = data.get("userflag", 'external')
         context['userflag'] = str(userflag)
         sfmodel = data.get("model", 'undef')
@@ -336,9 +360,9 @@ class HttpChannel(Channel):
         context['character_desc'] = str(character_desc)
         temperature = data.get("temperature", 'undef')
         context['temperature'] = str(temperature)
-        website= data.get("website", 'undef')
+        website = data.get("website", 'undef')
         context['website'] = str(website)
-        email= data.get("email", 'undef')
+        email = data.get("email", 'undef')
         context['email'] = str(email)
         teammode = data.get("teammode", 0)
         context['teammode'] = str(teammode)
@@ -352,6 +376,8 @@ class HttpChannel(Channel):
         context['userid'] = str(userid)
         userasst = data.get("userasst", 'undef')
         context['userasst'] = str(userasst)
+        sfuserid = data.get("sfuserid", 'undef')
+        context['sfuserid'] = str(sfuserid)
         fileids = data.get("fids", [0])
         if len(fileids) == 0:
             fileids.append(0)
