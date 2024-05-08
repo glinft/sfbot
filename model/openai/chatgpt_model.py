@@ -15,12 +15,23 @@ import re
 import requests
 import base64
 import random
+import string
 import hashlib
 import openai
 import tiktoken
+import oss2
+import uuid
+from io import BytesIO
+from PIL import Image
 from datetime import datetime
-from langchain_openai import OpenAIEmbeddings
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_community.chat_models import QianfanChatEndpoint
 from langchain_community.vectorstores import FAISS
+from langchain_community.callbacks import get_openai_callback
+from langchain_openai import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from urllib.parse import urlparse, urlunparse
 from duckduckgo_search import DDGS
 
@@ -36,13 +47,24 @@ azurec = AzureOpenAI(
     api_key=model_conf(const.OPEN_AI).get('azure_api_key'),
     api_version="2023-05-15",
 )
+
+qfn_ak = common_conf_val("qianfan_ak", "xxx")
+qfn_sk = common_conf_val("qianfan_sk", "xxx")
+gmn_key = common_conf_val("google_api_key", "xxx")
+llmgpt = ChatOpenAI(temperature=0, model_name="gpt-3.5-turbo-0125", openai_api_key=oai_key)
+
 user_session = dict()
+context_tokens = 8192
 md5sum_pattern = r'^[0-9a-f]{32}$'
 faiss_store_root= "/opt/faiss/"
 
 def is_valid_uuid(uuidstr):
     pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     return bool(re.match(pattern, uuidstr, re.IGNORECASE))
+
+def generate_random_string(length=8):
+    characters = string.ascii_lowercase + string.digits
+    return ''.join(random.choices(characters, k=length))
 
 def calculate_md5(text):
     md5_hash = hashlib.md5()
@@ -179,7 +201,7 @@ def get_plaid_transactions_data(user_id, start_date, end_date):
         txdata = txresp["Transactions"]
         if len(txdata["transactions"])==0:
             # return "Transactions: NO DATA\n\n"
-            with open('/path/to/plaidtx.json', 'r') as txfile:
+            with open('/home/ezoweb/devel/sfplaid/plaidtx.json', 'r') as txfile:
                 txresp = json.load(txfile)
                 txdata = txresp["Transactions"]
         result = ""
@@ -195,15 +217,6 @@ def get_plaid_transactions_data(user_id, start_date, end_date):
             result += f"- Type: {txn['transaction_type']}\n\n"
         return result
     return "Transactions: NO DATA\n\n"
-
-def get_plaid_liabilities_data(user_id):
-    return "Liabilities: NO DATA\n\n"
-
-def get_plaid_investments_holdings(user_id):
-    return "InvestmentsHoldings: NO DATA\n\n"
-
-def get_plaid_investments_transactions(user_id, start_date, end_date):
-    return "InvestmentsTransactions: NO DATA\n\n"
 
 plaid_funcs = { "get_plaid_balance_data": get_plaid_balance_data, "get_plaid_transactions_data": get_plaid_transactions_data, }
 plaid_tools = [
@@ -267,20 +280,37 @@ class ChatGPTModel(Model):
             user_flag = context['userflag']
             user_uuid = context.get('userid','undef')
             user_asst = context.get('userasst','undef')
+            file_ids = context.get('fileids','0')
             nres = int(context.get('res','0'))
             fwd = int(context.get('fwd','0'))
+            ctx = int(context.get('ctx','0'))
             character_id = context.get('character_id')
             character_desc = context.get('character_desc')
             temperature = context['temperature']
             website = context.get('website','undef')
             email = context.get('email','undef')
             sfmodel = context.get('sfmodel','undef')
+            sfuserid = context.get('sfuserid','undef')
+            llm_provider = 'openai'
+            llm_credential = 'default'
             if not is_valid_uuid(user_uuid):
                 user_uuid = None
             if not is_valid_uuid(user_asst):
                 user_asst = None
             if not (isinstance(sfmodel, str) and (sfmodel.startswith('ft:') or sfmodel.startswith('gpt-'))):
                 sfmodel = None
+
+            if isinstance(file_ids, str) and file_ids != '0' and from_chatbot_id.startswith('user:'):
+                character_id = file_ids
+                from_chatbot_id = 'bot:file'
+                user_flag = 'internal'
+                user_uuid = None
+                user_asst = None
+                website = None
+                email = None
+                nres = 0
+                fwd = 0
+                ctx = 0
 
             clear_memory_commands = common_conf_val('clear_memory_commands', ['#清除记忆'])
             if query in clear_memory_commands:
@@ -317,7 +347,7 @@ class ChatGPTModel(Model):
                     used_tokens = plaid_fcmp.usage.total_tokens
                     prompt_tokens = plaid_fcmp.usage.prompt_tokens
                     completion_tokens = plaid_fcmp.usage.completion_tokens
-                    logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, used_tokens, prompt_tokens, completion_tokens)
+                    logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens)
                     reply_content+='\n```sf-json\n'
                     reply_content+=json.dumps({'logid':logid})
                     reply_content+='\n```\n'
@@ -404,15 +434,24 @@ class ChatGPTModel(Model):
                 character_desc = teambot_instruction
                 if sfmodel is None and teambot_model is not None:
                     sfmodel = teambot_model.decode().strip()
-                if user_asst:
-                    log.info("[CHATGPT] asstbot character id={} desc={}".format(character_id,character_desc))
-                else:
-                    log.info("[CHATGPT] teambot character id={} desc={}".format(character_id,character_desc))
+                log.info("[CHATGPT] {} character id={} desc={}".format('asstbot' if user_asst else 'teambot',character_id,character_desc))
             else:
                 sfbot_key = "sfbot:org:{}:bot:{}".format(orgnum,botnum)
                 sfbot_model = myredis.redis.hget(sfbot_key, 'model')
+                baidu_key = myredis.redis.hget(sfbot_key, 'baidu_key')
+                google_key = myredis.redis.hget(sfbot_key, 'google_key')
                 if sfmodel is None and sfbot_model is not None:
                     sfmodel = sfbot_model.decode().strip()
+                if baidu_key is not None:
+                    baidu_key = baidu_key.decode().strip()
+                    if isinstance(baidu_key, str) and len(baidu_key) > 0:
+                        llm_provider = 'baidu'
+                        llm_credential = baidu_key
+                if google_key is not None:
+                    google_key = google_key.decode().strip()
+                    if isinstance(google_key, str) and len(google_key) > 0:
+                        llm_provider = 'google'
+                        llm_credential = google_key
 
             commands = []
             atcs = myredis.ft_search(embedded_query=query_embedding,
@@ -427,7 +466,7 @@ class ChatGPTModel(Model):
                     csf = 1.0 - float(atc.vector_score)
                     commands.append({'id':cid,'category':"actionTransformer",'score':csf})
 
-            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_asst, website, email, fwd)
+            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_asst, website, email, fwd, ctx)
             if new_query is None:
                 return 'Sorry, I have no ideas about what you said.'
 
@@ -435,7 +474,7 @@ class ChatGPTModel(Model):
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity, use_faiss)
+                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, sfuserid, 0, 0, 0, similarity, use_faiss)
                 reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
@@ -446,7 +485,7 @@ class ChatGPTModel(Model):
             #     # reply in stream
             #     return self.reply_text_stream(query, new_query, from_user_id)
 
-            reply_content, logid = self.reply_text(new_query, query, sfmodel, from_user_id, from_org_id, from_chatbot_id, similarity, temperature, use_faiss, 0)
+            reply_content, logid = self.reply_text(new_query, query, llm_provider, llm_credential, sfmodel, from_user_id, from_org_id, from_chatbot_id, sfuserid, similarity, temperature, use_faiss, 0)
             reply_embedding = oai_embeddings.embed_query(reply_content)
             docs = myredis.ft_search(embedded_query=reply_embedding,
                                      vector_field="text_vector",
@@ -555,7 +594,85 @@ class ChatGPTModel(Model):
             log.exception(e)
             return 0, 0
 
-    def reply_text(self, query, qtext, qmodel, user_id, org_id, chatbot_id, similarity, temperature, use_faiss=False, retry_count=0):
+    def gpt_stream(self, data):
+        #for i in range(10): yield f"Data: {i}\n" time.sleep(0.5)
+        try:
+            reqid = uuid.uuid4()
+            query = data["msg"]
+            session_id = data["id"]
+            from_org_id = data["orgid"]
+            from_org_id, from_chatbot_id = get_org_bot(from_org_id)
+            nres = int(data.get("res", 0))
+            fwd = int(data.get("fwd", 0))
+            ctx = int(data.get("ctx", 0))
+            sfmodel = data.get("model", 'undef')
+            user_flag = data.get("userflag", 'external')
+            character_id = data.get("character_id")
+            if character_id is not None:
+                character_id = f"c{character_id}"
+            character_desc = data.get("character_desc", 'undef')
+            temperature = data.get("temperature", 'undef')
+            sfuserid = data.get("sfuserid", 'undef')
+            if not (isinstance(sfmodel, str) and (sfmodel.startswith('ft:') or sfmodel.startswith('gpt-'))):
+                sfmodel = model_conf(const.OPEN_AI).get("model", "gpt-3.5-turbo-0125")
+            try:
+                temperature = float(temperature)
+                if temperature < 0.0 or temperature > 1.0:
+                    raise ValueError()
+            except ValueError:
+                temperature = model_conf(const.OPEN_AI).get("temperature", 0.75)
+            if not (isinstance(character_desc, str) and character_desc!='undef' and len(character_desc)>0):
+                character_desc = "You are a helpful assistant."
+            log.info("[CHATGPT|stream] model={} temperature={}".format(sfmodel, temperature))
+            log.info("[CHATGPT|stream] character={}".format(character_desc))
+            log.info("[CHATGPT|stream] query={}".format(query))
+            #new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, session_id,
+            #from_org_id, from_chatbot_id, user_flag, character_desc, character_id, None, None, None, fwd, ctx)
+            new_query = [{ "role": "system", "content": character_desc }, { "role": "user", "content": query }]
+            mtx = ""
+            response = client.chat.completions.create(
+                messages=new_query,
+                model=sfmodel,
+                temperature=temperature,
+                #max_tokens=context_tokens,
+                stream=True,
+                stream_options={"include_usage":True},
+            )
+            for chunk in response:
+                if len(chunk.choices)>0:
+                    chunk.id = reqid
+                    del chunk.object
+                    del chunk.system_fingerprint
+                    del chunk.model
+                    if chunk.usage is None:
+                        del chunk.usage
+                    if chunk.choices[0].logprobs is None:
+                        del chunk.choices[0].logprobs
+                    if chunk.choices[0].finish_reason is None:
+                        del chunk.choices[0].finish_reason
+                    if chunk.choices[0].delta.function_call is None:
+                        del chunk.choices[0].delta.function_call
+                    if chunk.choices[0].delta.role is None:
+                        del chunk.choices[0].delta.role
+                    if chunk.choices[0].delta.tool_calls is None:
+                        del chunk.choices[0].delta.tool_calls
+                    if isinstance(chunk.choices[0].delta.content, str):
+                        mtx += chunk.choices[0].delta.content
+                    yield 'data: '+chunk.model_dump_json()+'\n\n'
+                else:
+                    if chunk.usage:
+                        log.info("[CHATGPT|stream][{}] usage={}", chunk.model, chunk.usage)
+                        used_tokens = chunk.usage.total_tokens
+                        prompt_tokens = chunk.usage.prompt_tokens
+                        completion_tokens = chunk.usage.completion_tokens
+                        logid = Session.save_session(query, mtx, session_id, from_org_id, from_chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens)
+                        log.info("[CHATGPT|stream] logid={}".format(logid))
+            yield 'data: [DONE]\n\n'
+        except Exception as e:
+            log.exception(e)
+            yield 'data: [DONE]\n\n'
+
+    def reply_text(self, query, qtext, llm_provider, llm_credential, sfmodel, user_id, org_id, chatbot_id, sfuserid, similarity, temperature, use_faiss=False, retry_count=0):
         try:
             try:
                 temperature = float(temperature)
@@ -563,6 +680,39 @@ class ChatGPTModel(Model):
                     raise ValueError()
             except ValueError:
                 temperature = model_conf(const.OPEN_AI).get("temperature", 0.75)
+
+            messages = []
+            for msg in query:
+                if msg['role']=='system':
+                    messages.append(SystemMessage(content=msg['content']))
+                elif msg['role']=='user':
+                    messages.append(HumanMessage(content=msg['content']))
+                elif msg['role']=='assistant':
+                    messages.append(AIMessage(content=msg['content']))
+            log.info("[LLM] provider={}", llm_provider)
+            result = None
+            if llm_provider=="baidu":
+                llmqfn = QianfanChatEndpoint(model="ERNIE-Bot-turbo", qianfan_ak=qfn_ak, qianfan_sk=qfn_sk, streaming=True,)
+                result = llmqfn.invoke(messages, **{"temperature": temperature})
+                reply_content = result.content
+                used_tokens = 0
+                prompt_tokens = 0
+                completion_tokens = 0
+                log.info("[LLM/Qianfan] usage={}", 0)
+                log.info("[LLM/Qianfan] reply={}", reply_content)
+                logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
+                return reply_content, logid
+            elif llm_provider=="google":
+                llmgmn = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=gmn_key, temperature=temperature, convert_system_message_to_human=True)
+                result = llmgmn.invoke(messages)
+                reply_content = result.content
+                used_tokens = 0
+                prompt_tokens = 0
+                completion_tokens = 0
+                log.info("[LLM/Gemini] usage={}", 0)
+                log.info("[LLM/Gemini] reply={}", reply_content)
+                logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
+                return reply_content, logid
 
             orgnum = get_org_id(org_id)
             use_azure = True if orgnum==4 else False
@@ -576,10 +726,10 @@ class ChatGPTModel(Model):
             )
             else:
                 response = client.chat.completions.create(
-                    model=qmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
+                    model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
                     messages=query,
                     temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
-                    #max_tokens=8192,
+                    #max_tokens=context_tokens,
                     #top_p=model_conf(const.OPEN_AI).get("top_p", 0.7),,  #候选词列表。0.7 意味着只考虑前70%候选词的标记，建议和temperature参数二选一使用
                     frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
                     presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0),  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
@@ -589,9 +739,9 @@ class ChatGPTModel(Model):
             prompt_tokens = response.usage.prompt_tokens
             completion_tokens = response.usage.completion_tokens
             log.debug(response)
-            log.info("[CHATGPT] usage={}", response.usage)
+            log.info("[{}] usage={}", response.model, response.usage)
             log.info("[CHATGPT] reply={}", reply_content)
-            logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
+            logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
             return reply_content, logid
         except openai.RateLimitError as e:
             # rate limit exception
@@ -599,7 +749,7 @@ class ChatGPTModel(Model):
             if retry_count < 1:
                 time.sleep(5)
                 log.warn("[CHATGPT] RateLimit exceed, retry {} attempts".format(retry_count+1))
-                return self.reply_text(query, qtext, qmodel, user_id, org_id, chatbot_id, similarity, temperature, use_faiss, retry_count+1)
+                return self.reply_text(query, qtext, llm_provider, llm_credential, sfmodel, user_id, org_id, chatbot_id, sfuserid, similarity, temperature, use_faiss, retry_count+1)
             else:
                 return "You're asking too quickly, please take a break before asking me again.", None
         except openai.APIConnectionError as e:
@@ -614,12 +764,15 @@ class ChatGPTModel(Model):
             log.warn(e)
             log.warn("[CHATGPT] Service Unavailable")
             return "The server is overloaded or not ready yet.", None
+        except openai.BadRequestError as e:
+            log.warn(e)
+            log.warn("[CHATGPT] Bad Request")
+            return e.body.get('message', 'Bad request'), None
         except Exception as e:
             # unknown exception
             log.exception(e)
             Session.clear_session(user_id)
-            return "Oops, something wrong, please ask me again.", None
-
+            return "I'm unable to answer your question right now. Please try again later.", None
 
     async def reply_text_stream(self, query, context, retry_count=0):
         try:
@@ -630,14 +783,17 @@ class ChatGPTModel(Model):
             user_flag = context['userflag']
             user_uuid = context.get('userid','undef')
             user_asst = context.get('userasst','undef')
+            file_ids = context.get('fileids','0')
             nres = int(context.get('res','0'))
             fwd = int(context.get('fwd','0'))
+            ctx = int(context.get('ctx','0'))
             character_id = context.get('character_id')
             character_desc = context.get('character_desc')
             temperature = context['temperature']
             website = context.get('website','undef')
             email = context.get('email','undef')
             sfmodel = context.get('sfmodel','undef')
+            sfuserid = context.get('sfuserid','undef')
             if not is_valid_uuid(user_uuid):
                 user_uuid = None
             if not is_valid_uuid(user_asst):
@@ -645,7 +801,19 @@ class ChatGPTModel(Model):
             if not (isinstance(sfmodel, str) and (sfmodel.startswith('ft:') or sfmodel.startswith('gpt-'))):
                 sfmodel = None
 
-            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_asst, website, email, fwd)
+            if isinstance(file_ids, str) and file_ids != '0' and from_chatbot_id.startswith('user:'):
+                character_id = file_ids
+                from_chatbot_id = 'bot:file'
+                user_flag = 'internal'
+                user_uuid = None
+                user_asst = None
+                website = None
+                email = None
+                nres = 0
+                fwd = 0
+                ctx = 0
+
+            new_query, hitdocs, refurls, similarity, use_faiss = Session.build_session_query(query, from_user_id, from_org_id, from_chatbot_id, user_flag, character_desc, character_id, user_asst, website, email, fwd, ctx)
             if new_query is None:
                 yield True,'Sorry, I have no ideas about what you said.'
 
@@ -653,7 +821,7 @@ class ChatGPTModel(Model):
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, 0, 0, 0, similarity, use_faiss)
+                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, sfuserid, 0, 0, 0, similarity, use_faiss)
                 reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
@@ -679,7 +847,7 @@ class ChatGPTModel(Model):
                 model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
                 messages=new_query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
-                #max_tokens=8192,
+                #max_tokens=context_tokens,
                 #top_p=model_conf(const.OPEN_AI).get("top_p", 0.7),,  #候选词列表。0.7 意味着只考虑前70%候选词的标记，建议和temperature参数二选一使用
                 frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
                 presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0),  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
@@ -688,9 +856,9 @@ class ChatGPTModel(Model):
             full_response = ""
             for chunk in res:
                 log.debug(chunk)
-                if (chunk["choices"][0]["finish_reason"]=="stop"):
+                if chunk.choices[0].finish_reason=="stop":
                     break
-                chunk_message = chunk['choices'][0]['delta'].get("content")
+                chunk_message = chunk.choices[0].delta.content
                 if(chunk_message):
                     full_response+=chunk_message
                 yield False,full_response
@@ -698,7 +866,7 @@ class ChatGPTModel(Model):
             prompt_tokens = num_tokens_from_messages(new_query)
             completion_tokens = num_tokens_from_string(full_response)
             used_tokens = prompt_tokens + completion_tokens
-            logid = Session.save_session(query, full_response, from_user_id, from_org_id, from_chatbot_id, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
+            logid = Session.save_session(query, full_response, from_user_id, from_org_id, from_chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
 
             resources = []
             if nres > 0:
@@ -732,11 +900,15 @@ class ChatGPTModel(Model):
             log.warn(e)
             log.warn("[CHATGPT] Service Unavailable")
             yield True, "The server is overloaded or not ready yet."
+        except openai.BadRequestError as e:
+            log.warn(e)
+            log.warn("[CHATGPT] Bad Request")
+            yield True, e.body.get('message', 'Bad request')
         except Exception as e:
             # unknown exception
             log.exception(e)
             Session.clear_session(from_user_id)
-            yield True, "Oops, something wrong, please ask me again."
+            yield True, "I'm unable to answer your question right now. Please try again later."
 
     def create_img(self, query, retry_count=0):
         try:
@@ -745,10 +917,31 @@ class ChatGPTModel(Model):
                 model="dall-e-3",
                 size="1024x1024",
                 quality="standard",
+                response_format="b64_json",
                 prompt=query,
                 n=1,
             )
-            image_url = response.data[0].url
+            image_data = response.data[0].model_dump()["b64_json"]
+            image_obj = Image.open(BytesIO(base64.b64decode(image_data)))
+            random_string = generate_random_string(8)
+            image_path = f"/tmp/{random_string}.jpg"
+            image_obj.save(image_path)
+            current_utc_time = datetime.utcnow()
+            formatted_date = current_utc_time.strftime("%Y/%m/%d")
+            object_key = f"dalle/{formatted_date}/{random_string}.jpg"
+            alioss_ak = common_conf_val("aliyun_oss_ak", "xxx")
+            alioss_sk = common_conf_val("aliyun_oss_sk", "xxx")
+            alioss_ep = common_conf_val("aliyun_oss_endpoint", "xxx")
+            alioss_bk = common_conf_val("aliyun_oss_bucket", "xxx")
+            sfoss_url = common_conf_val("sflow_oss_url", "xxx")
+            auth = oss2.Auth(alioss_ak, alioss_sk)
+            bucket = oss2.Bucket(auth, alioss_ep, alioss_bk)
+            bucket.put_object_from_file(object_key, image_path)
+            bucket.put_object_acl(object_key, oss2.OBJECT_ACL_PUBLIC_READ)
+            if os.path.exists(image_path):
+                os.remove(image_path)
+            #image_url = response.data[0].url
+            image_url = f"{sfoss_url}/{object_key}"
             log.info("[DALLE] image_url={}".format(image_url))
             return [image_url]
         except openai.RateLimitError as e:
@@ -766,7 +959,7 @@ class ChatGPTModel(Model):
 
 class Session(object):
     @staticmethod
-    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc=None, character_id=None, user_uuid=None, website=None, email=None, fwd=0):
+    def build_session_query(query, user_id, org_id, chatbot_id='bot:0', user_flag='external', character_desc=None, character_id=None, user_uuid=None, website=None, email=None, fwd=0, ctx=0):
         '''
         build query with conversation history
         e.g.  [
@@ -780,7 +973,14 @@ class Session(object):
         :return: query content with conversaction
         '''
         config_prompt = common_conf_val("input_prompt", "")
-        session = user_session.get(user_id, [])
+        max_history_num = model_conf(const.OPEN_AI).get('max_history_num', None)
+
+        if user_id not in user_session:
+            user_session[user_id] = []
+        session = user_session.get(user_id)
+        query_tokens = num_tokens_from_string(query)
+        if query_tokens >= context_tokens/2:
+            Session.clear_session(user_id)
 
         faiss_id = user_id
         if isinstance(website, str) and website != 'undef' and len(website) > 0:
@@ -824,15 +1024,17 @@ class Session(object):
                 system_prompt += '\n' + doc.page_content
             system_prompt += '\n```\n'
             log.info("[FAISS] prompt={}".format(system_prompt))
-            if len(session) > 0 and session[0]['role'] == 'system':
-                session.pop(0)
-            session = []
             system_item = {'role': 'system', 'content': system_prompt}
-            session.insert(0, system_item)
-            user_session[user_id] = session
             user_item = {'role': 'user', 'content': query}
+            session.clear()
+            session.append(system_item)
             session.append(user_item)
             return session, [], [], similarity, True
+
+        file_chat = False
+        if chatbot_id == 'bot:file':
+            file_chat = True
+            chatbot_id = 'bot:0'
 
         orgnum = get_org_id(org_id)
         qnaorg = "(0|{})".format(orgnum)
@@ -841,12 +1043,16 @@ class Session(object):
             botnum += " | {}".format(character_id)
         if user_uuid:
             botnum = str(character_id)
+        if file_chat:
+            botnum = str(character_id)
         refurls = []
         hitdocs = []
         qna_output = None
         myquery = oai_embeddings.embed_query(query)
         myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
         qnas = myredis.ft_search(embedded_query=myquery, vector_field="title_vector", hybrid_fields=myredis.create_hybrid_field(qnaorg, "category", "qa"))
+        if file_chat:
+            qnas = []
         if len(qnas) > 0 and float(qnas[0].vector_score) < 0.15:
             qna = qnas[0]
             log.info(f"Q/A: {qna.id} {qna.orgid} {qna.category} {qna.vector_score}")
@@ -863,17 +1069,49 @@ class Session(object):
                 pass
 
         log.info("[RDSFT] org={} {} {}".format(org_id, orgnum, qnaorg))
+        if user_uuid:
+            fc_key = "sftool:org:{}:action:{}".format(orgnum,39)
+            if myredis.redis.exists(fc_key):
+                fc_json = myredis.redis.hget(fc_key, 'fcjson').decode()
+                fc_tools = []
+                fc_tools.append({"type":"function","function":json.loads(fc_json)})
+                fc_funcs = { "get_latest_news": get_latest_news, }
+                fc_msgs = [
+                    {'role':'system', 'content':"You are an intelligence agent, and you try to handle the query."},
+                    {"role":"user", "content":"Today is "+datetime.now().strftime("%Y-%m-%d")+". "+query}
+                ]
+                fc_qcmp = client.chat.completions.create(model="gpt-3.5-turbo-0125", messages=fc_msgs, tools=fc_tools, tool_choice="auto")
+                fc_qrsp = fc_qcmp.choices[0].message
+                if fc_qrsp.tool_calls is not None:
+                    fc_msgs.append(fc_qrsp)
+                    for tc in fc_qrsp.tool_calls:
+                        if tc.type=="function":
+                            function_name = tc.function.name
+                            function_args = json.loads(tc.function.arguments)
+                            function_tocall = fc_funcs[function_name]
+                            function_output = function_tocall(**function_args)
+                            fc_msgs.append({"tool_call_id":tc.id, "role":"tool", "name":function_name, "content":function_output})
+                            query += f"\n\n```\n{function_output}\n```\n"
+                    #fc_fcmp = client.chat.completions.create(model="gpt-3.5-turbo-0125", messages=fc_msgs)
+                    #fc_data = fc_fcmp.choices[0].message.content
+                    #log.info("[FUNC] msgs={}", fc_msgs)
+                    #log.info("[FUNC] data={}", fc_data)
+                    #query += f"\n\n```\n{fc_data}\n```\n"
+
         similarity = 0.0
         docs = myredis.ft_search(embedded_query=myquery,
                                  vector_field="text_vector",
-                                 hybrid_fields=myredis.create_hybrid_field2(str(orgnum), botnum, user_flag, "category", "kb"))
+                                 hybrid_fields=myredis.create_hybrid_field2(str(orgnum), botnum, user_flag, "category", "ka" if file_chat else "kb"))
         if len(docs) > 0:
             similarity = 1.0 - float(docs[0].vector_score)
-            threshold = float(common_conf_val('similarity_threshold', 0.7))
+            threshold = float(common_conf_val('similarity_threshold', 0.65))
             if similarity < threshold:
                 docs = []
 
         system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
+        if file_chat:
+            system_prompt = 'You are a helpful AI document assistant. Use the following pieces of context to answer user queries about relevant documents.'
+
         orgnum = str(get_org_id(org_id))
         botnum = str(get_bot_id(chatbot_id))
         sfbot_key = "sfbot:org:{}:bot:{}".format(orgnum,botnum)
@@ -881,7 +1119,7 @@ class Session(object):
         if sfbot_threshold is not None:
             sfbot_threshold = 1.0-int(sfbot_threshold.decode())/100
         else:
-            sfbot_threshold = 0.6
+            sfbot_threshold = 0.65
         sfbot_char_desc = myredis.redis.hget(sfbot_key, 'character_desc')
         if sfbot_char_desc is not None:
             sfbot_char_desc = sfbot_char_desc.decode()
@@ -894,18 +1132,18 @@ class Session(object):
             log.info("[CHATGPT] prompt(onlyfwd)={}".format(system_prompt))
             if len(session) > 0 and session[0]['role'] == 'system':
                 session.pop(0)
+            if len(session) > ctx*2:
+                del session[:len(session)-ctx*2]
             system_item = {'role': 'system', 'content': system_prompt}
-            session.insert(0, system_item)
-            user_session[user_id] = session
             user_item = {'role': 'user', 'content': query}
+            session.insert(0, system_item)
             session.append(user_item)
+            while len(session) > 3 and num_tokens_from_messages(session) > context_tokens:
+                del session[1:3]
             return session, [], [], similarity, False
 
         if isinstance(character_id, str) and character_id.startswith('x'):
-            if user_uuid:
-                log.info("[CHATGPT] asstbot character id={} add context".format(character_id))
-            else:
-                log.info("[CHATGPT] teambot character id={} add context".format(character_id))
+            log.info("[CHATGPT] {} character id={} add context".format('asstbot' if user_uuid else 'teambot',character_id))
         else:
             system_prompt += '\nIf you don\'t know the answer, just say you don\'t know. DO NOT try to make up an answer.'
             # system_prompt += '\nIf the question is not related to the context, politely respond that you are tuned to only answer questions that are related to the context.'
@@ -915,11 +1153,14 @@ class Session(object):
             log.info("[CHATGPT] prompt(nodoc)={}".format(system_prompt))
             if len(session) > 0 and session[0]['role'] == 'system':
                 session.pop(0)
+            if len(session) > ctx*2:
+                del session[:len(session)-ctx*2]
             system_item = {'role': 'system', 'content': system_prompt}
-            session.insert(0, system_item)
-            user_session[user_id] = session
             user_item = {'role': 'user', 'content': query}
+            session.insert(0, system_item)
             session.append(user_item)
+            while len(session) > 3 and num_tokens_from_messages(session) > context_tokens:
+                del session[1:3]
             return session, [], [], similarity, False
 
         system_prompt += f"\n{config_prompt}\n```"
@@ -969,62 +1210,65 @@ class Session(object):
         refurls = get_unique_by_key(refurls, 'url')
         hitdocs = get_unique_by_key(hitdocs, 'key')
         hitdocs = [{k: v for k, v in d.items() if k != 'key'} for d in hitdocs]
+        if file_chat:
+            hitdocs = []
         for doc in hitdocs:
             increase_hit_count(doc['id'], doc['category'], doc['url'])
         if len(session) > 0 and session[0]['role'] == 'system':
             session.pop(0)
+        if len(session) > ctx*2:
+            del session[:len(session)-ctx*2]
         system_item = {'role': 'system', 'content': system_prompt}
-        session.insert(0, system_item)
-        user_session[user_id] = session
         user_item = {'role': 'user', 'content': query}
+        session.insert(0, system_item)
         session.append(user_item)
+        while len(session) > 3 and num_tokens_from_messages(session) > context_tokens:
+            del session[1:3]
         return session, hitdocs, refurls, similarity, False
 
     @staticmethod
-    def save_session(query, answer, user_id, org_id, chatbot_id, used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0, use_faiss=False):
-        max_tokens = model_conf(const.OPEN_AI).get('conversation_max_tokens')
-        max_history_num = model_conf(const.OPEN_AI).get('max_history_num', None)
-        if not max_tokens or max_tokens > 8192:
-            # default value
-            max_tokens = 8192
+    def save_session(query, answer, user_id, org_id, chatbot_id, sfuserid="undef", used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0, use_faiss=False):
         session = user_session.get(user_id)
         if session:
             # append conversation
             gpt_item = {'role': 'assistant', 'content': answer}
             session.append(gpt_item)
-
+        """
+        max_tokens = model_conf(const.OPEN_AI).get('conversation_max_tokens')
+        if not max_tokens or max_tokens > context_tokens:
+            max_tokens = context_tokens
         if used_tokens > max_tokens and len(session) >= 3:
-            # pop first conversation (TODO: more accurate calculation)
             session.pop(1)
             session.pop(1)
-
-        if max_history_num is not None:
-            while len(session) > max_history_num * 2 + 1:
-                session.pop(1)
-                session.pop(1)
-
+        """
         if use_faiss:
             return None
 
+        orgnum = str(get_org_id(org_id))
+        botnum = str(get_bot_id(chatbot_id))
         if used_tokens > 0:
             myredis = RedisSingleton(password=common_conf_val('redis_password', ''))
-            botkey = "sfbot:{}:{}".format(org_id,chatbot_id)
+            sfbot_key = "sfbot:org:{}:bot:{}".format(orgnum,botnum)
             momkey = 'stat_'+datetime.now().strftime("%Y%m")
-            momqty = myredis.redis.hget(botkey, momkey)
+            momqty = myredis.redis.hget(sfbot_key, momkey)
             if momqty is None:
-                myredis.redis.hset(botkey, momkey, 1)
+                myredis.redis.hset(sfbot_key, momkey, 1)
             else:
                 momqty = int(momqty.decode())
-                myredis.redis.hset(botkey, momkey, momqty+1)
+                myredis.redis.hset(sfbot_key, momkey, momqty+1)
+
+        if botnum == '0':
+            return None
 
         gqlurl = 'http://127.0.0.1:5000/graphql'
         gqlfunc = 'createChatHistory'
         headers = { "Content-Type": "application/json", }
-        orgnum = get_org_id(org_id)
-        botnum = get_bot_id(chatbot_id)
         question = base64.b64encode(query.encode('utf-8')).decode('utf-8')
         answer = base64.b64encode(answer.encode('utf-8')).decode('utf-8')
-        xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgnum},sfbotId:{botnum},question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
+        sfuidkv = ''
+        if isinstance(sfuserid, str) and sfuserid != 'undef' and len(sfuserid) > 0:
+            sfuidkv = f"userId:\"{sfuserid}\","
+        xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgnum},sfbotId:{botnum},{sfuidkv}question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
         gqldata = { "query": xquery, "variables": {}, }
         try:
             gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
