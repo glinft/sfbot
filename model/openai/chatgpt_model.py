@@ -344,10 +344,11 @@ class ChatGPTModel(Model):
                     reply_content = plaid_fcmp.choices[0].message.content
                     log.info("[PLAID]  msgs={}", plaid_msgs)
                     log.info("[PLAID] reply={}", reply_content)
+                    model_name = plaid_fcmp.model
                     used_tokens = plaid_fcmp.usage.total_tokens
                     prompt_tokens = plaid_fcmp.usage.prompt_tokens
                     completion_tokens = plaid_fcmp.usage.completion_tokens
-                    logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens)
+                    logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, sfuserid, model_name, used_tokens, prompt_tokens, completion_tokens)
                     reply_content+='\n```sf-json\n'
                     reply_content+=json.dumps({'logid':logid})
                     reply_content+='\n```\n'
@@ -474,7 +475,7 @@ class ChatGPTModel(Model):
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, sfuserid, 0, 0, 0, similarity, use_faiss)
+                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, sfuserid, 'auto', 0, 0, 0, similarity, use_faiss)
                 reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
@@ -662,10 +663,11 @@ class ChatGPTModel(Model):
                 else:
                     if chunk.usage:
                         log.info("[CHATGPT|stream][{}] usage={}", chunk.model, chunk.usage)
+                        model_name = chunk.model
                         used_tokens = chunk.usage.total_tokens
                         prompt_tokens = chunk.usage.prompt_tokens
                         completion_tokens = chunk.usage.completion_tokens
-                        logid = Session.save_session(query, mtx, session_id, from_org_id, from_chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens)
+                        logid = Session.save_session(query, mtx, session_id, from_org_id, from_chatbot_id, sfuserid, model_name, used_tokens, prompt_tokens, completion_tokens)
                         log.info("[CHATGPT|stream] logid={}".format(logid))
             yield 'data: [DONE]\n\n'
         except Exception as e:
@@ -695,23 +697,25 @@ class ChatGPTModel(Model):
                 llmqfn = QianfanChatEndpoint(model="ERNIE-Bot-turbo", qianfan_ak=qfn_ak, qianfan_sk=qfn_sk, streaming=True,)
                 result = llmqfn.invoke(messages, **{"temperature": temperature})
                 reply_content = result.content
+                model_name = "ERNIE-Bot-turbo"
                 used_tokens = 0
                 prompt_tokens = 0
                 completion_tokens = 0
                 log.info("[LLM/Qianfan] usage={}", 0)
                 log.info("[LLM/Qianfan] reply={}", reply_content)
-                logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
+                logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, sfuserid, model_name, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
                 return reply_content, logid
             elif llm_provider=="google":
                 llmgmn = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=gmn_key, temperature=temperature, convert_system_message_to_human=True)
                 result = llmgmn.invoke(messages)
                 reply_content = result.content
+                model_name = "gemini-pro"
                 used_tokens = 0
                 prompt_tokens = 0
                 completion_tokens = 0
                 log.info("[LLM/Gemini] usage={}", 0)
                 log.info("[LLM/Gemini] reply={}", reply_content)
-                logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
+                logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, sfuserid, model_name, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
                 return reply_content, logid
 
             orgnum = get_org_id(org_id)
@@ -735,13 +739,14 @@ class ChatGPTModel(Model):
                     presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0),  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
                 )
             reply_content = response.choices[0].message.content
+            model_name = response.model
             used_tokens = response.usage.total_tokens
             prompt_tokens = response.usage.prompt_tokens
             completion_tokens = response.usage.completion_tokens
             log.debug(response)
             log.info("[{}] usage={}", response.model, response.usage)
             log.info("[CHATGPT] reply={}", reply_content)
-            logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
+            logid = Session.save_session(qtext, reply_content, user_id, org_id, chatbot_id, sfuserid, model_name, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
             return reply_content, logid
         except openai.RateLimitError as e:
             # rate limit exception
@@ -821,7 +826,7 @@ class ChatGPTModel(Model):
             if new_query[-1]['role'] == 'assistant':
                 reply_message = new_query.pop()
                 reply_content = reply_message['content']
-                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, sfuserid, 0, 0, 0, similarity, use_faiss)
+                logid = Session.save_session(query, reply_content, from_user_id, from_org_id, from_chatbot_id, sfuserid, 'auto', 0, 0, 0, similarity, use_faiss)
                 reply_content = run_word_filter(reply_content, get_org_id(from_org_id))
                 reply_content+='\n```sf-json\n'
                 reply_content+=json.dumps({'logid':logid})
@@ -852,21 +857,29 @@ class ChatGPTModel(Model):
                 frequency_penalty=model_conf(const.OPEN_AI).get("frequency_penalty", 0.0),  # [-2,2]之间，该值越大则越降低模型一行中的重复用词，更倾向于产生不同的内容
                 presence_penalty=model_conf(const.OPEN_AI).get("presence_penalty", 1.0),  # [-2,2]之间，该值越大则越不受输入限制，将鼓励模型生成输入中不存在的新词，更倾向于产生不同的内容
                 stream=True,
+                stream_options={"include_usage":True},
             )
             full_response = ""
             for chunk in res:
                 log.debug(chunk)
+                if chunk.usage:
+                    log.info("[CHATGPT|stream][{}] usage={}", chunk.model, chunk.usage)
+                    model_name = chunk.model
+                    used_tokens = chunk.usage.total_tokens
+                    prompt_tokens = chunk.usage.prompt_tokens
+                    completion_tokens = chunk.usage.completion_tokens
                 if chunk.choices[0].finish_reason=="stop":
                     break
                 chunk_message = chunk.choices[0].delta.content
                 if(chunk_message):
                     full_response+=chunk_message
                 yield False,full_response
-
+            """
             prompt_tokens = num_tokens_from_messages(new_query)
             completion_tokens = num_tokens_from_string(full_response)
             used_tokens = prompt_tokens + completion_tokens
-            logid = Session.save_session(query, full_response, from_user_id, from_org_id, from_chatbot_id, sfuserid, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
+            """
+            logid = Session.save_session(query, full_response, from_user_id, from_org_id, from_chatbot_id, sfuserid, model_name, used_tokens, prompt_tokens, completion_tokens, similarity, use_faiss)
 
             resources = []
             if nres > 0:
@@ -1102,11 +1115,6 @@ class Session(object):
         docs = myredis.ft_search(embedded_query=myquery,
                                  vector_field="text_vector",
                                  hybrid_fields=myredis.create_hybrid_field2(str(orgnum), botnum, user_flag, "category", "ka" if file_chat else "kb"))
-        if len(docs) > 0:
-            similarity = 1.0 - float(docs[0].vector_score)
-            threshold = float(common_conf_val('similarity_threshold', 0.65))
-            if similarity < threshold:
-                docs = []
 
         system_prompt = 'You are a helpful AI customer support agent. Use the following pieces of context to answer the customer inquiry.'
         if file_chat:
@@ -1119,7 +1127,12 @@ class Session(object):
         if sfbot_threshold is not None:
             sfbot_threshold = 1.0-int(sfbot_threshold.decode())/100
         else:
-            sfbot_threshold = 0.65
+            sfbot_threshold = float(common_conf_val('similarity_threshold', 0.75))
+        if len(docs) > 0:
+            similarity = 1.0 - float(docs[0].vector_score)
+            if similarity < sfbot_threshold:
+                docs = []
+
         sfbot_char_desc = myredis.redis.hget(sfbot_key, 'character_desc')
         if sfbot_char_desc is not None:
             sfbot_char_desc = sfbot_char_desc.decode()
@@ -1227,7 +1240,7 @@ class Session(object):
         return session, hitdocs, refurls, similarity, False
 
     @staticmethod
-    def save_session(query, answer, user_id, org_id, chatbot_id, sfuserid="undef", used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0, use_faiss=False):
+    def save_session(query, answer, user_id, org_id, chatbot_id, sfuserid="undef", model_name="auto", used_tokens=0, prompt_tokens=0, completion_tokens=0, similarity=0.0, use_faiss=False):
         session = user_session.get(user_id)
         if session:
             # append conversation
@@ -1268,7 +1281,7 @@ class Session(object):
         sfuidkv = ''
         if isinstance(sfuserid, str) and sfuserid != 'undef' and len(sfuserid) > 0:
             sfuidkv = f"userId:\"{sfuserid}\","
-        xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgnum},sfbotId:{botnum},{sfuidkv}question:"{question}",answer:"{answer}",similarity:{similarity},promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
+        xquery = f"""mutation {gqlfunc} {{ {gqlfunc}( chatHistory:{{ tag:"{user_id}",organizationId:{orgnum},sfbotId:{botnum},{sfuidkv}question:"{question}",answer:"{answer}",similarity:{similarity},model:"{model_name}",promptTokens:{prompt_tokens},completionTokens:{completion_tokens},totalTokens:{used_tokens}}}){{ id tag }} }}"""
         gqldata = { "query": xquery, "variables": {}, }
         try:
             gqlresp = requests.post(gqlurl, json=gqldata, headers=headers)
