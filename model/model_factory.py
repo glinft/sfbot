@@ -17,7 +17,7 @@ def create_bot(model_type):
         return OpenAIModel()
 
     elif model_type == const.CHATGPT:
-        # ChatGPT API (gpt-3.5-turbo)
+        # ChatGPT API (gpt-4o-mini)
         from model.openai.chatgpt_model import ChatGPTModel
         return ChatGPTModel()
 

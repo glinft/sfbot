@@ -4,7 +4,7 @@
     "openai": {
       "api_key": "YOUR API KEY",
       "api_base": "",
-      "model": "gpt-3.5-turbo",
+      "model": "gpt-4o-mini",
       "proxy": "",
       "conversation_max_tokens": 1000,
       "temperature":0.75,

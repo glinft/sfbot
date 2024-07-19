@@ -51,7 +51,7 @@ azurec = AzureOpenAI(
 qfn_ak = common_conf_val("qianfan_ak", "xxx")
 qfn_sk = common_conf_val("qianfan_sk", "xxx")
 gmn_key = common_conf_val("google_api_key", "xxx")
-llmgpt = ChatOpenAI(temperature=0, model_name="gpt-3.5-turbo-0125", openai_api_key=oai_key)
+llmgpt = ChatOpenAI(temperature=0, model_name="gpt-4o-mini", openai_api_key=oai_key)
 
 user_session = dict()
 context_tokens = 8192
@@ -328,7 +328,7 @@ class ChatGPTModel(Model):
                     {'role':'system', 'content':"You are an agent of Plaid, a digital financial service provider, and you try to handle the query about accounts or transactions."},
                     {"role":"user", "content":"Today is "+datetime.now().strftime("%Y-%m-%d")+". "+query}
                 ]
-                plaid_qcmp = client.chat.completions.create(model="gpt-3.5-turbo-0125", messages=plaid_msgs, tools=plaid_tools, tool_choice="auto")
+                plaid_qcmp = client.chat.completions.create(model="gpt-4o-mini", messages=plaid_msgs, tools=plaid_tools, tool_choice="auto")
                 plaid_qrsp = plaid_qcmp.choices[0].message
                 if plaid_qrsp.tool_calls is not None:
                     plaid_msgs.append(plaid_qrsp)
@@ -340,7 +340,7 @@ class ChatGPTModel(Model):
                             function_tocall = plaid_funcs[function_name]
                             function_output = function_tocall(**function_args)
                             plaid_msgs.append({"tool_call_id":tc.id, "role":"tool", "name":function_name, "content":function_output})
-                    plaid_fcmp = client.chat.completions.create(model="gpt-3.5-turbo-0125", messages=plaid_msgs)
+                    plaid_fcmp = client.chat.completions.create(model="gpt-4o-mini", messages=plaid_msgs)
                     reply_content = plaid_fcmp.choices[0].message.content
                     log.info("[PLAID]  msgs={}", plaid_msgs)
                     log.info("[PLAID] reply={}", reply_content)
@@ -580,7 +580,7 @@ class ChatGPTModel(Model):
                 )
             else:
                 response = client.chat.completions.create(
-                    model=model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
+                    model=model_conf(const.OPEN_AI).get("model") or "gpt-4o-mini",
                     messages=msgs,
                     temperature=0.1,
                     frequency_penalty=0.0,
@@ -615,7 +615,7 @@ class ChatGPTModel(Model):
             temperature = data.get("temperature", 'undef')
             sfuserid = data.get("sfuserid", 'undef')
             if not (isinstance(sfmodel, str) and (sfmodel.startswith('ft:') or sfmodel.startswith('gpt-'))):
-                sfmodel = model_conf(const.OPEN_AI).get("model", "gpt-3.5-turbo-0125")
+                sfmodel = model_conf(const.OPEN_AI).get("model", "gpt-4o-mini")
             try:
                 temperature = float(temperature)
                 if temperature < 0.0 or temperature > 1.0:
@@ -730,7 +730,7 @@ class ChatGPTModel(Model):
             )
             else:
                 response = client.chat.completions.create(
-                    model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
+                    model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-4o-mini",
                     messages=query,
                     temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                     #max_tokens=context_tokens,
@@ -849,7 +849,7 @@ class ChatGPTModel(Model):
                 sfmodel = sfbot_model.decode().strip()
 
             res = client.chat.completions.create(
-                model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-3.5-turbo-0125",
+                model=sfmodel or model_conf(const.OPEN_AI).get("model") or "gpt-4o-mini",
                 messages=new_query,
                 temperature=temperature,  # 熵值，在[0,1]之间，越大表示选取的候选词越随机，回复越具有不确定性，建议和top_p参数二选一使用，创意性任务越大越好，精确性任务越小越好
                 #max_tokens=context_tokens,
@@ -1093,7 +1093,7 @@ class Session(object):
                     {'role':'system', 'content':"You are an intelligence agent, and you try to handle the query."},
                     {"role":"user", "content":"Today is "+datetime.now().strftime("%Y-%m-%d")+". "+query}
                 ]
-                fc_qcmp = client.chat.completions.create(model="gpt-3.5-turbo-0125", messages=fc_msgs, tools=fc_tools, tool_choice="auto")
+                fc_qcmp = client.chat.completions.create(model="gpt-4o-mini", messages=fc_msgs, tools=fc_tools, tool_choice="auto")
                 fc_qrsp = fc_qcmp.choices[0].message
                 if fc_qrsp.tool_calls is not None:
                     fc_msgs.append(fc_qrsp)
@@ -1105,7 +1105,7 @@ class Session(object):
                             function_output = function_tocall(**function_args)
                             fc_msgs.append({"tool_call_id":tc.id, "role":"tool", "name":function_name, "content":function_output})
                             query += f"\n\n```\n{function_output}\n```\n"
-                    #fc_fcmp = client.chat.completions.create(model="gpt-3.5-turbo-0125", messages=fc_msgs)
+                    #fc_fcmp = client.chat.completions.create(model="gpt-4o-mini", messages=fc_msgs)
                     #fc_data = fc_fcmp.choices[0].message.content
                     #log.info("[FUNC] msgs={}", fc_msgs)
                     #log.info("[FUNC] data={}", fc_data)
