@@ -693,8 +693,8 @@ class ChatGPTModel(Model):
                     messages.append(AIMessage(content=msg['content']))
             log.info("[LLM] provider={}", llm_provider)
             result = None
-            if llm_provider=="baidu":
-                llmqfn = QianfanChatEndpoint(model="ERNIE-Bot-turbo", qianfan_ak=qfn_ak, qianfan_sk=qfn_sk, streaming=True,)
+            if llm_provider=="baidu": # ERNIE-3.5-8K
+                llmqfn = QianfanChatEndpoint(model="ERNIE-Lite-8K", qianfan_ak=qfn_ak, qianfan_sk=qfn_sk, streaming=True,)
                 result = llmqfn.invoke(messages, **{"temperature": temperature})
                 reply_content = result.content
                 model_name = "ERNIE-Bot-turbo"
