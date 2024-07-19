@@ -697,7 +697,7 @@ class ChatGPTModel(Model):
                 llmqfn = QianfanChatEndpoint(model="ERNIE-Lite-8K", qianfan_ak=qfn_ak, qianfan_sk=qfn_sk, streaming=True,)
                 result = llmqfn.invoke(messages, **{"temperature": temperature})
                 reply_content = result.content
-                model_name = "ERNIE-Bot-turbo"
+                model_name = "ERNIE-Lite-8K"
                 used_tokens = 0
                 prompt_tokens = 0
                 completion_tokens = 0
