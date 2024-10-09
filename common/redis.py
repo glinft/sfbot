@@ -5,11 +5,13 @@ from typing import List
 
 class RedisSingleton:
     _instance = None
+    _pool = None
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
             cls._instance = super().__new__(cls)
-            cls._instance.redis = redis.Redis(*args, **kwargs)
+            cls._pool = redis.ConnectionPool(*args, **kwargs)
+            cls._instance.redis = redis.Redis(connection_pool=cls._pool)
         return cls._instance
 
     def create_hybrid_field(self, orgid: str, field_name: str, value: str) -> str:
